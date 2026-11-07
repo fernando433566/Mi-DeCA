@@ -17,12 +17,11 @@ Requisitos: un equipo Linux x86_64 con Docker y Docker Compose.
 
 ```bash
 sha256sum -c SHA256SUMS                         # comprobar los ficheros
-docker load -i deca-server-0.1.0-amd64.tar.gz   # carga la imagen deca-server:0.1.0
+docker load -i deca-server-0.1.0-amd64.tar.gz   # carga la imagen deca-server:0.1.0, tambien se puede hacer docker pull a la imagen si se prefiere
 cp .env.example .env                            # y editar los valores (ver abajo)
 docker compose up -d
 docker compose ps                               # debe aparecer "healthy"
 ```
-tambien se puede hacer docker pull a la imagen
 Abre `http://<ip-del-equipo>:8134` y entra con **`Admin` / `1234`**. Un asistente te obliga a cambiar la contraseña y a crear la empresa.
 
 ### Variables de `.env`

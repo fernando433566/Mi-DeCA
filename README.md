@@ -22,7 +22,7 @@ cp .env.example .env                            # y editar los valores (ver abaj
 docker compose up -d
 docker compose ps                               # debe aparecer "healthy"
 ```
-
+tambien se puede hacer docker pull a la imagen
 Abre `http://<ip-del-equipo>:8134` y entra con **`Admin` / `1234`**. Un asistente te obliga a cambiar la contraseña y a crear la empresa.
 
 ### Variables de `.env`
@@ -66,19 +66,4 @@ Después, en otros equipos basta con poner ese nombre en `DECA_IMAGE` y ejecutar
 
 ## 2. App Android
 
-Copia `DeCA-0.1.0.apk` al móvil y ábrela (hay que permitir «instalar aplicaciones de origen desconocido»), o desde un ordenador:
-
-```bash
-adb install DeCA-0.1.0.apk
-```
-
-- **Compatible con Android 8.0 (API 26) o superior.** La interfaz necesita «Android System WebView» 94 o posterior, que los móviles con Google Play reciben como actualización. Si es más antiguo, la app lo explica y lleva a Google Play para actualizarlo.
-- Al abrirla: «Entrar con código QR» (el administrador lo enseña en Ajustes → empresa → Trabajadores → perfil) o escribir la dirección del servidor, el usuario y la contraseña.
-- Para tener el widget con el último DeCA: Ajustes → «Poner el billete en la pantalla de inicio».
-
-Certificado de firma de la APK (SHA-256), para comprobar que una actualización viene del mismo origen
-(`apksigner verify --print-certs DeCA-0.1.0.apk`):
-
-```
-3a287175f979a4efeacd24fb25382474ecb338ff6086e58f9c7df9337cdbf6b9
-```
+se instala como cualquier otra app

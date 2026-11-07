@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="asfalto">#2B2D31</color>
+    <color name="azul">#0B4EA2</color>
+    <color name="azul_osc">#073575</color>
+    <color name="papel">#FFFDF6</color>
+    <style name="Theme.DeCA" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/asfalto</item>
+        <item name="android:statusBarColor">@color/asfalto</item>
+        <item name="android:navigationBarColor">@color/asfalto</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

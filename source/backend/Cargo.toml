@@ -1,0 +1,51 @@
+[package]
+name = "deca-server"
+version = "0.1.0"
+edition = "2021"
+description = "Servidor para generar Documentos electrónicos de Control Administrativo (DeCA)"
+
+[dependencies]
+# Servidor web
+axum = { version = "0.8", features = ["multipart"] }
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "fs", "set-header"] }
+
+# Datos
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "macros", "chrono"] }
+chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.10"
+uuid = { version = "1", features = ["v4"] }
+
+# Seguridad
+argon2 = "0.5"
+rand = "0.8"
+base64 = "0.22"
+data-encoding = "2"
+hmac = "0.12"
+sha1 = "0.10"
+sha2 = "0.10"
+
+# DeCA: QR, PNG y copias de seguridad
+qrcode = { version = "0.14", default-features = false }
+png = "0.17"
+flate2 = "1"
+futures = "0.3"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
+# OpenStreetMap
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+
+# Utilidades
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true

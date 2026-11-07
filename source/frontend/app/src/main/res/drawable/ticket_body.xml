@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Parte izquierda del billete: papel con franja azul -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item><shape><solid android:color="#0B4EA2" /><corners android:topLeftRadius="16dp" android:bottomLeftRadius="16dp" /></shape></item>
+    <item android:left="7dp"><shape><solid android:color="#FFFDF6" /></shape></item>
+</layer-list>

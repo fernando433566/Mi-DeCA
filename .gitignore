@@ -1,0 +1,23 @@
+/*.apk
+/*.tar.gz
+target/
+
+# Archivos de compilación
+**/target/
+
+# Otros
+.env
+
+# Rust
+**/target/
+
+# Android / Gradle
+**/.gradle/
+**/build/
+
+# IDE
+.idea/
+*.iml
+
+# Entornos
+.env

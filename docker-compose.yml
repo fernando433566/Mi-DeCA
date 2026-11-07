@@ -1,0 +1,48 @@
+# DeCA · despliegue con Docker Compose
+#
+#   1. docker load -i deca-server-0.1.0-amd64.tar.gz      (o docker pull de tu registro)
+#   2. cp .env.example .env  y edita los valores
+#   3. docker compose up -d
+#
+# Cloudflare Tunnel va aparte (no está en este fichero): apúntalo a http://<este equipo>:8134
+
+name: deca
+
+services:
+  deca:
+    # Imagen del servidor (backend Rust + aplicación web del puerto 8134).
+    image: ${DECA_IMAGE:-deca-server:0.1.0}
+    container_name: deca-server
+    restart: unless-stopped
+    platform: linux/amd64
+
+    # Puerto: <dirección de escucha>:<puerto fuera del contenedor>:<puerto dentro del contenedor>
+    #  - DECA_BIND_ADDRESS=0.0.0.0   accesible desde la red local (otros equipos, móviles)
+    #  - DECA_BIND_ADDRESS=127.0.0.1 solo desde esta máquina (p. ej. si solo entra Cloudflare Tunnel)
+    #  - DECA_HOST_PORT              puerto en la máquina anfitriona (dentro siempre es 8134)
+    ports:
+      - "${DECA_BIND_ADDRESS:-0.0.0.0}:${DECA_HOST_PORT:-8134}:8134"
+
+    environment:
+      # Enlace HTTPS público (el de Cloudflare Tunnel) que irá dentro de los QR.
+      # Opcional: si se deja vacío, el servidor lo detecta y lo comprueba solo la primera
+      # vez que alguien entra por el túnel.
+      DECA_PUBLIC_URL: ${DECA_PUBLIC_URL:-}
+      TZ: Europe/Madrid
+      RUST_LOG: ${RUST_LOG:-info,sqlx=warn}
+
+    # Datos persistentes: base de datos (deca.db), PDF (DeCA/Año/Mes/Día/...) y mapas.
+    # Por defecto un volumen de Docker con nombre; para usar una carpeta del anfitrión
+    # pon DECA_DATA=/ruta/absoluta en .env (la carpeta debe pertenecer al UID 10001:
+    # sudo chown -R 10001 /ruta/a/carpeta).
+    volumes:
+      - ${DECA_DATA:-deca-data}:/data
+
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8134/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+
+volumes:
+  deca-data:

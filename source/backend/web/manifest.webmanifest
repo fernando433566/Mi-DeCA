@@ -1,0 +1,10 @@
+{
+  "name": "DeCA · Documento de control",
+  "short_name": "DeCA",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#e7e9ec",
+  "theme_color": "#2b2d31",
+  "lang": "es",
+  "icons": [{ "src": "img/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect x="16" y="16" width="480" height="480" rx="88" fill="#073575"/>
+  <rect x="34" y="34" width="444" height="444" rx="72" fill="#0b4ea2" stroke="#fff" stroke-width="22"/>
+  <text x="256" y="236" font-family="Roboto, Arial, sans-serif" font-weight="900" font-size="150" fill="#fff" text-anchor="middle">DeCA</text>
+  <g fill="#fff">
+    <rect x="148" y="286" width="56" height="56"/><rect x="160" y="298" width="32" height="32" fill="#0b4ea2"/><rect x="168" y="306" width="16" height="16"/>
+    <rect x="308" y="286" width="56" height="56"/><rect x="320" y="298" width="32" height="32" fill="#0b4ea2"/><rect x="328" y="306" width="16" height="16"/>
+    <rect x="148" y="374" width="56" height="56"/><rect x="160" y="386" width="32" height="32" fill="#0b4ea2"/><rect x="168" y="394" width="16" height="16"/>
+    <rect x="224" y="290" width="20" height="20"/><rect x="264" y="310" width="20" height="20"/><rect x="224" y="350" width="40" height="20"/>
+    <rect x="284" y="370" width="20" height="40"/><rect x="324" y="370" width="40" height="20"/><rect x="224" y="400" width="40" height="30"/><rect x="324" y="410" width="20" height="20"/>
+  </g>
+</svg>

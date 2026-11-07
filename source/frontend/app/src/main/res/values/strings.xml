@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">DeCA</string>
+    <string name="widget_name">Último DeCA</string>
+    <string name="widget_desc">Billete con el último DeCA y su QR</string>
+    <string name="channel_name">DeCA creados sin conexión</string>
+</resources>

@@ -1,4 +1,4 @@
-No me hago responsable de daños por errores, uso indevido o cualquier cosa relacionada con la app, use este programa bajo su propio riesgo
+Esta app fue creada con IA. No me hago responsable de daños por errores, uso indevido o cualquier cosa relacionada con la app, use este programa bajo su propio riesgo
 # DeCA · Versión compilada (lista para instalar)
 
 | Fichero | Qué es |

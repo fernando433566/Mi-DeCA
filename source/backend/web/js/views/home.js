@@ -11,15 +11,16 @@ import { pendingTicket, tripCarousel } from '../components/ticket.js';
 import { currentIndex, setIndex } from '../components/latest.js';
 import { fechaHora } from '../core/format.js';
 import * as catalog from '../components/catalog.js';
+import { pending, removePending, retry as retryQueue, queueAvailable, sendsInBackground } from '../core/queue.js';
 
 function pendingSection() {
-  if (!isAndroid) return [];
-  const list = native.pendingDecas();
+  if (!queueAvailable()) return [];
+  const list = pending();
   const out = [];
   for (const p of list) {
     if (p.estado === 'creado') {
       // Ya creado por la cola: se avisa y se quita de pendientes.
-      native.removePending(p.id);
+      removePending(p.id);
       const n = (p.resultado && p.resultado.decas && p.resultado.decas[0]) || null;
       toast(n ? `DeCA ${n.numero} creado al volver la conexión` : 'DeCA pendiente creado', 'ok');
       continue;
@@ -29,7 +30,9 @@ function pendingSection() {
   if (!out.length) return [];
   return [
     section('Pendientes de crear'),
-    notice('Estos DeCA se crearán solos en cuanto haya conexión y te avisaremos. Hasta que tengan QR NO son válidos: no inicies el transporte.', 'danger', 'wifioff'),
+    notice(sendsInBackground()
+      ? 'Estos DeCA se crearán solos en cuanto haya conexión y te avisaremos. Hasta que tengan QR NO son válidos: no inicies el transporte.'
+      : 'Estos DeCA se crearán cuando haya conexión y la aplicación esté abierta: déjala abierta al recuperar la señal. Hasta que tengan QR NO son válidos: no inicies el transporte.', 'danger', 'wifioff'),
     ...out,
   ];
 }
@@ -87,16 +90,16 @@ export async function view() {
 
 /** Detalle de un DeCA en la cola sin conexión (Android). */
 export async function pendingView({ id }) {
-  const p = native.pendingDecas().find((x) => x.id === id);
+  const p = pending().find((x) => x.id === id);
   if (!p) return go('/', { replace: true });
   const d = p.payload || {};
   const env = d.envios || [];
-  const retry = sign({ text: 'Intentar enviar ahora', ico: 'send', color: 'green', center: true, onClick: () => { native.retryPending(); toast('Reintentando…'); } });
+  const retry = sign({ text: 'Intentar enviar ahora', ico: 'send', color: 'green', center: true, onClick: () => { retryQueue(); toast('Reintentando…'); } });
   const discard = sign({
     text: 'Descartar', ico: 'trash', color: 'red', small: true, center: true,
     onClick: async () => {
       if (await confirm('¿Descartar este DeCA pendiente? No se creará.', { danger: true, ok: 'Descartar' })) {
-        native.removePending(id);
+        removePending(id);
         go('/', { replace: true });
       }
     },

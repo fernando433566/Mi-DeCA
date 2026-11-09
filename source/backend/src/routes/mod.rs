@@ -11,6 +11,7 @@
 //! | `/api/decas`, `/api/widget`| Crear DeCA, "DeCA más reciente", "Últimos 7 días"         |
 //! | `/api/server`             | Ajustes -> Servidor (admin): copias, eliminación automática|
 //! | `/api/maps`               | OpenStreetMap: direcciones y mapas sin conexión            |
+//! | `/sw.js`                  | Aplicación instalable (funcionamiento sin conexión)        |
 //! | `/deca/...`               | Enlace público del QR (descarga directa, sin sesión)       |
 
 mod auth;
@@ -20,6 +21,7 @@ mod decas;
 mod maps;
 mod me;
 mod public;
+mod pwa;
 mod server;
 mod workers;
 
@@ -39,6 +41,7 @@ pub fn router(state: AppState) -> Router {
         .service(ServeDir::new(web).fallback(ServeFile::new(web.join("index.html"))));
     Router::new()
         .route("/api/info", get(info))
+        .route("/sw.js", get(pwa::service_worker))
         .route("/health", get(|| async { "ok" }))
         .merge(public::router())
         .nest("/api/auth", auth::router())

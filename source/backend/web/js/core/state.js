@@ -2,6 +2,7 @@
 
 import { session } from './api.js';
 import { isAndroid } from './native.js';
+import { isInstalled } from './platform.js';
 
 export const state = { user: null, netOk: true };
 
@@ -21,7 +22,7 @@ export function setNet(ok) {
   bar.hidden = ok;
   if (!ok && !bar.firstChild) {
     const s = document.createElement('span');
-    s.textContent = isAndroid ? 'Sin conexión · Se muestran los datos guardados' : 'Sin conexión con el servidor';
+    s.textContent = isAndroid || isInstalled() ? 'Sin conexión · Se muestran los datos guardados' : 'Sin conexión con el servidor';
     bar.appendChild(s);
   }
 }

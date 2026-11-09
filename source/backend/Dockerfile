@@ -1,7 +1,7 @@
 # DeCA Server · imagen x86_64 (linux/amd64): servidor Rust + aplicación web (puerto 8134)
 #
 # Construir (desde source/backend):
-#   docker build --platform linux/amd64 -t deca-server:0.1.0 .
+#   docker build --platform linux/amd64 -t deca-server:0.2.0 .
 
 # ---------- Compilación ----------
 FROM --platform=linux/amd64 rust:1.99.1-bookworm AS builder
@@ -20,7 +20,7 @@ RUN cargo build --release --locked
 FROM --platform=linux/amd64 debian:bookworm-slim
 LABEL org.opencontainers.image.title="DeCA Server" \
       org.opencontainers.image.description="Documento electrónico de Control Administrativo (DeCA): servidor y aplicación web" \
-      org.opencontainers.image.version="0.1.0"
+      org.opencontainers.image.version="0.2.0"
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates tzdata curl \

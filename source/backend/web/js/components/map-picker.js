@@ -7,8 +7,9 @@
 
 import { h, icon } from '../core/dom.js';
 import { api, serverBase, session } from '../core/api.js';
-import { isAndroid, native } from '../core/native.js';
+import { native } from '../core/native.js';
 import { sign, toast, select } from '../core/ui.js';
+import * as localMaps from '../core/localmaps.js';
 
 const VENDOR = new URL('../../vendor/', import.meta.url).href;
 let libs = null;
@@ -37,20 +38,6 @@ async function loadLibs() {
   return libs;
 }
 
-/** Fuente PMTiles que lee el fichero descargado en Android a través del puente nativo. */
-class NativeSource {
-  constructor(id) { this.id = id; }
-  getKey() { return `local-${this.id}`; }
-  async getBytes(offset, length) {
-    const b64 = native.mapRead(this.id, offset, length);
-    if (!b64) throw new Error('No se pudo leer el mapa');
-    const bin = atob(b64);
-    const buf = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
-    return { data: buf.buffer };
-  }
-}
-
 function onlineStyle() {
   return {
     version: 8,
@@ -67,8 +54,8 @@ function onlineStyle() {
   };
 }
 
-function offlineStyle(L, region) {
-  const src = new NativeSource(region.id);
+async function offlineStyle(L, region) {
+  const src = await localMaps.openSource(region.id, L.pmtiles);
   L.protocol.add(new L.pmtiles.PMTiles(src));
   return {
     version: 8,
@@ -110,10 +97,10 @@ export function pickOnMap({ initial = '' } = {}) {
     if (online) {
       try { await api('/api/info', { timeout: 4000 }); } catch { online = false; }
     }
-    const regions = isAndroid ? native.mapsLocal().filter((r) => r.estado === 'descargado') : [];
+    const regions = localMaps.localMapsAvailable() ? localMaps.list().filter((r) => r.estado === 'descargado') : [];
     const useOffline = !online && regions.length > 0;
     if (!online && !useOffline) {
-      toast(isAndroid ? 'Sin conexión y sin mapas descargados (Ajustes → Mapas)' : 'Sin conexión', 'err');
+      toast(localMaps.localMapsAvailable() ? 'Sin conexión y sin mapas descargados (Ajustes → Mapas)' : 'Sin conexión', 'err');
       return resolve(null);
     }
 
@@ -125,9 +112,9 @@ export function pickOnMap({ initial = '' } = {}) {
     if (useOffline && regions.length > 1) {
       regionSel = select(regions.map((r) => [r.id, r.nombre]), current.id);
       regionSel.style.minHeight = '44px';
-      regionSel.addEventListener('change', () => {
+      regionSel.addEventListener('change', async () => {
         current = regions.find((r) => r.id === regionSel.value);
-        map.setStyle(offlineStyle(L, current));
+        map.setStyle(await offlineStyle(L, current));
         const b = current.limites;
         map.fitBounds([[b.min_lon, b.min_lat], [b.max_lon, b.max_lat]]);
       });
@@ -150,7 +137,7 @@ export function pickOnMap({ initial = '' } = {}) {
     const b = current && current.limites;
     const map = new L.maplibregl.Map({
       container: mapEl,
-      style: useOffline ? offlineStyle(L, current) : onlineStyle(),
+      style: useOffline ? await offlineStyle(L, current) : onlineStyle(),
       center: b ? [(b.min_lon + b.max_lon) / 2, (b.min_lat + b.max_lat) / 2] : [-3.70, 40.42],
       zoom: b ? 9 : 5.2,
       attributionControl: { compact: true },

@@ -13,7 +13,7 @@ use sqlx::{Column, Row, SqlitePool, TypeInfo, ValueRef};
 
 /// Tablas incluidas, en orden de dependencias. Las sesiones no se copian.
 const TABLES: &[&str] = &[
-    "companies", "users", "trailers", "trucks", "parties", "places", "goods", "decas",
+    "companies", "users", "trailers", "trucks", "parties", "places", "party_places", "goods", "decas",
     "deca_versions", "audit_log", "settings",
 ];
 const FORMAT: &str = "deca-backup";

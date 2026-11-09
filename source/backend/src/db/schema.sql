@@ -95,6 +95,13 @@ CREATE TABLE IF NOT EXISTS places (
     created_at TEXT NOT NULL
 );
 
+-- Ubicaciones de cada empresa (cargadora o transportista)
+CREATE TABLE IF NOT EXISTS party_places (
+    party_id INTEGER NOT NULL REFERENCES parties(id) ON DELETE CASCADE,
+    place_id INTEGER NOT NULL REFERENCES places(id) ON DELETE CASCADE,
+    PRIMARY KEY (party_id, place_id)
+);
+
 -- Tipos de mercancía
 CREATE TABLE IF NOT EXISTS goods (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,

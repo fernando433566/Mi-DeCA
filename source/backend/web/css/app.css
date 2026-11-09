@@ -37,7 +37,9 @@ body {
   min-height: 100%;
   overscroll-behavior-y: contain;
 }
-button, input, select, textarea { font: inherit; color: inherit; }
+html { -webkit-text-size-adjust: 100%; }
+button, input, select, textarea { font: inherit; color: inherit; -webkit-appearance: none; appearance: none; }
+input[type=checkbox] { -webkit-appearance: auto; appearance: auto; }
 [hidden] { display: none !important; }
 
 /* ---------- Cabecera de asfalto ---------- */
@@ -73,7 +75,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .top-actions { display: flex; gap: 8px; }
 
 .netbar {
-  position: sticky; top: 64px; z-index: 19;
+  position: sticky; top: calc(64px + env(safe-area-inset-top, 0px)); z-index: 19;
   padding: 8px 14px; font-weight: 700; text-align: center;
   background: repeating-linear-gradient(-45deg, var(--amarillo) 0 18px, #1d1d1d 18px 36px);
 }
@@ -126,7 +128,7 @@ p.hint { color: var(--texto-2); margin: 6px 2px 14px; line-height: 1.4; }
     var(--c);
   color: var(--fg); text-align: left; font-weight: 800; font-size: 1.1rem; letter-spacing: .01em;
   box-shadow: 0 0 0 2px var(--c-osc), 0 6px 0 var(--c-osc), 0 9px 14px rgba(0,0,0,.28);
-  cursor: pointer; user-select: none;
+  cursor: pointer; -webkit-user-select: none; user-select: none;
   transition: transform .06s, box-shadow .06s;
   text-decoration: none;
 }
@@ -385,6 +387,14 @@ dl.kv dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
 .map-pin { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; margin: -44px 0 0 -22px; pointer-events: none; z-index: 2; }
 .progress { height: 14px; border-radius: 7px; background: var(--linea); overflow: hidden; border: 1px solid var(--chapa-borde); }
 .progress > i { display: block; height: 100%; background: repeating-linear-gradient(-45deg, var(--verde) 0 10px, #0b8a4b 10px 20px); }
+
+.place-row { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; font-weight: 600; overflow-wrap: anywhere; }
+.place-row span { flex: 1; min-width: 0; }
+.place-row .sign { width: auto; flex: none; margin: 0; }
+
+.install-step { display: flex; gap: 12px; align-items: center; }
+.install-step .ico { width: 36px; height: 36px; flex: none; color: var(--azul); }
+.install-n { width: 34px; height: 34px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--azul); color: #fff; font-weight: 900; }
 
 .muted { color: var(--texto-2); }
 .center { text-align: center; }

@@ -19,8 +19,8 @@ cargo test                    # pruebas unitarias
 cargo test -- --ignored ceuta # prueba real de recorte de mapas (requiere Internet)
 
 # Imagen Docker (incluye la web)
-docker build --platform linux/amd64 -t deca-server:0.1.0 .
-docker run -d -p 8134:8134 -v deca-data:/data deca-server:0.1.0
+docker build --platform linux/amd64 -t deca-server:0.2.0 .
+docker run -d -p 8134:8134 -v deca-data:/data deca-server:0.2.0
 ```
 
 Para desplegar con Docker Compose, ver [`../../git`](../../git).
@@ -57,6 +57,18 @@ web/
 ```
 
 Sin conexión, la web enseña los últimos DeCA guardados (el QR se genera en el dispositivo).
+
+## Aplicación instalable en iPhone (PWA)
+
+La misma web se instala desde Safari con «Añadir a pantalla de inicio», sin Mac, sin compilar y sin cuenta de Apple. Necesita entrar por `https://`.
+
+- `/sw.js` lo genera el servidor (`src/routes/pwa.rs` + plantilla `src/pwa/sw.js`) con la lista de ficheros de `web/` y una huella de su contenido: al cambiar cualquier fichero, el navegador instala la versión nueva. Guarda la aplicación para abrir sin conexión y nunca intercepta `/api/` ni los enlaces públicos de los QR.
+- `web/js/core/queue.js`: cola de DeCA sin conexión. En iPhone se envía con la aplicación abierta (iOS no da segundo plano a las webs): al abrirla, al recuperar la conexión y cada 30 s. Usa el mismo `client_ref`, así que no duplica DeCA.
+- `web/js/core/localmaps.js`: mapas PMTiles guardados en el dispositivo (Cache API en iPhone, nativo en Android).
+- Lectura de QR con `jsQR`, porque Safari no incluye `BarcodeDetector`.
+- Sin widget y sin brillo máximo: Apple no los ofrece a las aplicaciones web.
+
+Probado con WebKit 27.2 emulando un iPhone 15 Pro en modo instalado. Falta probarlo en un iPhone real (cámara, «Añadir a pantalla de inicio», descargas de PDF).
 
 ## Dirección pública y HTTPS (Cloudflare Tunnel)
 
@@ -191,13 +203,14 @@ Prioridad: admin→trabajador > empresa > propias del trabajador > automáticas 
 | GET/PUT | `/api/companies/{id}/preferences` | Administración de Preferencias -> Preferencias de la empresa |
 | GET/POST | `/api/companies/{id}/workers` | Trabajadores en mi empresa / Crear cuenta trabajador `{usuario, nombre, contrasena}` |
 | GET | `/api/companies/{id}/decas?trabajador=&desde=&hasta=&matricula=&pagina=` | Administración de DeCA emitidos |
-| GET/PUT/DELETE | `/api/workers/{id}` | Perfil: cambiar `{usuario, nombre, contrasena, empresa_id}` o eliminar |
+| GET/PUT/DELETE | `/api/workers/{id}` | Perfil: cambiar `{usuario, nombre, contrasena, empresa_id, administrador}` o eliminar. Nadie puede cambiar su propio permiso ni eliminarse |
 | DELETE | `/api/workers/{id}/2fa` | Quitar el 2FA del trabajador |
 | GET/PUT | `/api/workers/{id}/preferences` | Gestionar preferencias del trabajador |
 | POST | `/api/workers/{id}/qr-login` | «Enseñar código QR» |
 
 ### Base de datos compartida
 `/api/catalog/{trucks|trailers|parties|places|goods}`: `GET ?q=` (y `tipo=cargador|transportista` en `parties`), `POST`, `PUT /{id}`, `DELETE /{id}`.
+Las empresas (`parties`) aceptan `ubicaciones` (lista de direcciones completas) y las devuelven con `id`, `nombre` y `direccion`: al elegir una empresa en un DeCA se proponen como origen y destino.
 Los camiones aceptan `remolque_id` o `remolque_matricula` como remolque predeterminado.
 Al emitir un DeCA, los cargadores, transportistas, direcciones, mercancías, camiones y remolques nuevos se guardan solos en esta base de datos.
 
@@ -214,6 +227,7 @@ Al emitir un DeCA, los cargadores, transportistas, direcciones, mercancías, cam
 | GET | `/api/decas/{id}/historial` | Registro con fecha y hora |
 | GET | `/api/widget/ultimo` | `{viajes: [...]}`: viajes del último DeCA con datos mínimos + QR en PNG base64 |
 | GET | `/deca/...` | **Pública**: la URL del QR |
+| GET | `/sw.js` | Service worker de la aplicación instalable (generado) |
 | GET | `/api/info` | Comprueba que una dirección es un servidor DeCA (la usa la app al iniciar sesión) |
 
 ### Servidor (admin)

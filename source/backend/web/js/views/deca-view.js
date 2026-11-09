@@ -13,8 +13,12 @@ import { fecha, fechaHora, kg, num, diaCorto } from '../core/format.js';
 /** QR a pantalla completa con brillo máximo (para el agente en un control). */
 export function showQrFullscreen(d) {
   native.setBrightness(true);
+  // En iPhone no se puede subir el brillo, pero sí evitar que la pantalla se apague.
+  let lock = null;
+  navigator.wakeLock?.request('screen').then((l) => { lock = l; }).catch(() => {});
   const close = () => {
     native.setBrightness(false);
+    lock?.release();
     el.remove();
   };
   const el = h('div.qr-full', { onclick: close },

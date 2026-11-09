@@ -43,11 +43,14 @@ pub struct Worker {
     tiene_2fa: bool,
     #[sqlx(rename = "created_at")]
     creado: DateTime<Utc>,
+    /// Tiene permisos de administrador (por defecto, no).
+    administrador: bool,
     /// DeCA emitidos en los últimos 7 días
     decas_7_dias: i64,
 }
 
 const SELECT: &str = "SELECT u.id, u.username, u.display_name, u.company_id, u.totp_enabled, u.created_at,
+    u.role = 'admin' AS administrador,
     (SELECT COUNT(*) FROM decas d WHERE d.user_id = u.id AND d.created_at >= ?) AS decas_7_dias
     FROM users u";
 
@@ -56,7 +59,7 @@ fn week_ago() -> DateTime<Utc> {
 }
 
 pub async fn list_for_company(state: &AppState, company_id: i64) -> AppResult<Vec<Worker>> {
-    Ok(sqlx::query_as(&format!("{SELECT} WHERE u.company_id = ? AND u.role = 'worker' AND u.active = 1 ORDER BY u.display_name"))
+    Ok(sqlx::query_as(&format!("{SELECT} WHERE u.company_id = ? AND u.active = 1 ORDER BY u.display_name"))
         .bind(week_ago())
         .bind(company_id)
         .fetch_all(&state.pool)
@@ -64,7 +67,7 @@ pub async fn list_for_company(state: &AppState, company_id: i64) -> AppResult<Ve
 }
 
 pub async fn fetch(state: &AppState, id: i64) -> AppResult<Worker> {
-    sqlx::query_as(&format!("{SELECT} WHERE u.id = ? AND u.role = 'worker' AND u.active = 1"))
+    sqlx::query_as(&format!("{SELECT} WHERE u.id = ? AND u.active = 1 AND NOT (u.role = 'admin' AND u.company_id IS NULL)"))
         .bind(week_ago())
         .bind(id)
         .fetch_optional(&state.pool)
@@ -90,11 +93,26 @@ struct UpdateWorker {
     nombre: Option<String>,
     contrasena: Option<String>,
     empresa_id: Option<i64>,
+    /// Casilla «Administrador» del perfil.
+    administrador: Option<bool>,
 }
 
 async fn update(State(state): State<AppState>, AdminUser(admin): AdminUser, Path(id): Path<i64>, Json(req): Json<UpdateWorker>) -> AppResult<Json<Worker>> {
-    fetch(&state, id).await?;
+    let current = fetch(&state, id).await?;
     let now = Utc::now();
+    if let Some(make_admin) = req.administrador.filter(|v| *v != current.administrador) {
+        if id == admin.id {
+            return Err(AppError::bad("No puedes cambiar tu propio permiso de administrador"));
+        }
+        sqlx::query("UPDATE users SET role = ?, updated_at = ? WHERE id = ?")
+            .bind(if make_admin { "admin" } else { "worker" })
+            .bind(now)
+            .bind(id)
+            .execute(&state.pool)
+            .await?;
+        let action = if make_admin { "administrador_concedido" } else { "administrador_retirado" };
+        crate::db::audit(&state.pool, Some(admin.id), action, None, format!("id {id}")).await;
+    }
     if let Some(u) = req.usuario.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
         validate_username(u)?;
         sqlx::query("UPDATE users SET username = ?, updated_at = ? WHERE id = ?")
@@ -134,6 +152,9 @@ async fn update(State(state): State<AppState>, AdminUser(admin): AdminUser, Path
 /// Elimina la cuenta. Los DeCA emitidos se conservan (obligación de 1 año).
 async fn remove(State(state): State<AppState>, AdminUser(admin): AdminUser, Path(id): Path<i64>) -> AppResult<Json<Value>> {
     let w = fetch(&state, id).await?;
+    if id == admin.id {
+        return Err(AppError::bad("No puedes eliminar tu propia cuenta"));
+    }
     sqlx::query("UPDATE users SET active = 0, username = ?, updated_at = ? WHERE id = ?")
         .bind(format!("{}#eliminado#{id}", w.usuario))
         .bind(Utc::now())

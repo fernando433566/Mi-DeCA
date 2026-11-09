@@ -6,6 +6,7 @@ import { api, session, normalizeServer, ApiError } from '../core/api.js';
 import { page, panel, field, input, sign, busy, toast, notice, modal } from '../core/ui.js';
 import { isAndroid, native } from '../core/native.js';
 import { go } from '../core/router.js';
+import { isIOS, isInstalled } from '../core/platform.js';
 import { setUser } from '../core/state.js';
 
 const LAST_SERVER = 'deca.lastServer';
@@ -30,28 +31,50 @@ async function finish(server, resp) {
   go('/', { replace: true });
 }
 
-/** Lee un QR con la cámara del navegador (BarcodeDetector, Chrome para Android). */
-async function scanInBrowser() {
-  if (!('BarcodeDetector' in window) || !navigator.mediaDevices) {
-    throw new Error('Este navegador no puede leer códigos QR. Usa la app Android o el inicio de sesión manual.');
+/** Lector de QR: el del navegador si existe o jsQR (Safari no trae ninguno). */
+async function qrReader(video) {
+  if ('BarcodeDetector' in window) {
+    const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+    return async () => (await detector.detect(video))[0]?.rawValue;
   }
-  const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+  if (!window.jsQR) {
+    await new Promise((ok, ko) => document.head.appendChild(h('script', { src: 'vendor/jsqr/jsQR.js', onload: ok, onerror: ko })));
+  }
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  return async () => {
+    if (!video.videoWidth) return null;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0);
+    const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    return window.jsQR(img.data, img.width, img.height)?.data;
+  };
+}
+
+/** Lee un QR con la cámara del navegador. */
+async function scanInBrowser() {
+  if (!navigator.mediaDevices) {
+    throw new Error('La cámara solo funciona entrando por https://. Escribe tu usuario y tu contraseña.');
+  }
   const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
   const video = h('video', { autoplay: true, playsinline: true, muted: true, style: { width: '100%', borderRadius: '12px' } });
   video.srcObject = stream;
+  const read = await qrReader(video);
   let done = false;
   const result = new Promise((resolve) => {
     const tick = async () => {
       if (done) return;
       try {
-        const codes = await detector.detect(video);
-        if (codes.length) return resolve(codes[0].rawValue);
+        const text = await read();
+        if (text) return resolve(text);
       } catch { /* aún sin imagen */ }
       setTimeout(tick, 250);
     };
     video.addEventListener('playing', tick, { once: true });
   });
   const dialog = modal({ title: 'Apunta al código QR', body: [video], buttons: [{ text: 'Cancelar', value: null, color: 'white' }] });
+  video.play().catch(() => {});
   const text = await Promise.race([result, dialog]);
   done = true;
   stream.getTracks().forEach((t) => t.stop());
@@ -134,6 +157,7 @@ export async function view() {
   page({
     title: 'Iniciar sesión',
     body: [
+      isIOS && !isInstalled() ? sign({ text: 'Instalar en el iPhone', sub: 'Añade DeCA a la pantalla de inicio', ico: 'share', color: 'yellow', chev: true, onClick: () => go('/instalar') }) : null,
       qrBtn,
       h('h2.section', 'O escribe tus datos'),
       form,

@@ -13,6 +13,7 @@ import { addressInput } from '../components/address.js';
 import * as catalog from '../components/catalog.js';
 import { hoy, parseNum, uuid, fecha, kg, num } from '../core/format.js';
 import { setIndex, refreshLatest } from '../components/latest.js';
+import { enqueue, queueAvailable, sendsInBackground } from '../core/queue.js';
 import { plate as normPlate } from '../core/validate.js';
 
 const DRAFT = 'draft';
@@ -130,6 +131,14 @@ function partyStep(ctx, kind) {
       Object.assign(p, { nombre: x.nombre, nif: x.nif, domicilio: x.domicilio });
       name.value = x.nombre; nif.value = x.nif; dom.value = x.domicilio;
       if (tit && x.titular) { p.titular = x.titular; tit.value = x.titular; }
+      // Como el remolque de un camión: la ubicación de la cargadora se rellena sola.
+      const places = x.ubicaciones || [];
+      if (!isT && places.length === 1 && !ctx.d.envios[0].origen && !pin('origen')) {
+        ctx.d.envios[0].origen = places[0].direccion;
+        toast(`Origen rellenado: ${places[0].nombre}`, 'ok');
+      } else if (places.length > 1) {
+        toast(`${x.nombre} tiene ${places.length} ubicaciones: aparecerán al elegir origen y destino`);
+      }
     },
   });
   const pre = isT ? 'transportista' : 'cargador';
@@ -153,6 +162,15 @@ function partyStep(ctx, kind) {
   };
 }
 
+/** Ubicaciones de la empresa cargadora y de la transportista elegidas en este DeCA. */
+async function companyPlaces(d) {
+  const parties = await catalog.load('parties');
+  const same = (a, b) => String(a || '').trim().toUpperCase() === String(b || '').trim().toUpperCase();
+  const chosen = parties.filter((p) => (p.tipo === 'cargador' && same(p.nif, d.cargador.nif))
+    || (p.tipo === 'transportista' && same(p.nif, d.transportista.nif)));
+  return chosen.flatMap((p) => p.ubicaciones || []);
+}
+
 function stepLoad(ctx) {
   const { d, pin, rerender } = ctx;
   const nodes = [];
@@ -172,8 +190,8 @@ function stepLoad(ctx) {
     nodes.push(
       d.envios.length > 1 ? section(`Envío ${i + 1}`) : null,
       panel(
-        field('Origen (dirección completa)', addressInput({ value: e.origen, onChange: (v) => (e.origen = v) }), { pin: first && pin('origen') }),
-        field('Destino (dirección completa)', addressInput({ value: e.destino, onChange: (v) => (e.destino = v) }), { pin: first && pin('destino') }),
+        field('Origen (dirección completa)', addressInput({ value: e.origen, onChange: (v) => (e.origen = v), companyPlaces: () => companyPlaces(d) }), { pin: first && pin('origen') }),
+        field('Destino (dirección completa)', addressInput({ value: e.destino, onChange: (v) => (e.destino = v), companyPlaces: () => companyPlaces(d) }), { pin: first && pin('destino') }),
         field('Mercancía', goodsCombo, { pin: first && pin('mercancia') }),
         h('div.row',
           field('Peso (kg)', weight, { pin: first && pin('peso_kg') }),
@@ -361,13 +379,15 @@ async function doCreate(ctx) {
   } catch (e) {
     if (!e.offline) throw e;
     setNet(false);
-    if (isAndroid) {
-      native.enqueueDeca(payload);
+    if (queueAvailable()) {
+      enqueue(payload);
       cache.set(DRAFT, null);
       await modal({
         title: 'Sin conexión',
         body: [
-          notice('El DeCA se ha guardado y se creará automáticamente en cuanto vuelva la conexión. Te avisaremos con una notificación.', 'info', 'wifioff'),
+          notice(sendsInBackground()
+            ? 'El DeCA se ha guardado y se creará automáticamente en cuanto vuelva la conexión. Te avisaremos con una notificación.'
+            : 'El DeCA se ha guardado. Se creará cuando haya conexión y la aplicación esté abierta: ábrela en cuanto recuperes la señal.', 'info', 'wifioff'),
           notice('Hasta tener el QR el DeCA NO es válido: no inicies el transporte.', 'danger'),
         ],
         buttons: [{ text: 'Entendido', value: true, color: 'green' }],

@@ -9,6 +9,7 @@ Todos se descargaron del registro de npm y se comprobó su suma de integridad (s
 | [PMTiles](https://github.com/protomaps/PMTiles) | 4.5.0 | BSD-3-Clause | Lectura de mapas PMTiles |
 | [@protomaps/basemaps](https://github.com/protomaps/basemaps) | 5.7.2 | BSD-3-Clause | Estilo del mapa vectorial |
 | [basemaps-assets](https://github.com/protomaps/basemaps-assets) (commit en `map-assets/COMMIT`) | — | Iconos: BSD-3-Clause · Fuentes Noto Sans: SIL OFL 1.1 (`map-assets/fonts/OFL.txt`) | Iconos y fuentes del mapa |
+| [jsQR](https://github.com/cozmo/jsQR) | 1.4.0 | Apache-2.0 (`jsqr/LICENSE`) | Lectura de QR con la cámara en Safari |
 | [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) | 2.0.4 | MIT | Códigos QR generados en el dispositivo |
 
 Datos de los mapas: © OpenStreetMap contributors (ODbL), a través de Protomaps.

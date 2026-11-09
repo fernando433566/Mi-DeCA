@@ -6,7 +6,7 @@ import { h } from '../core/dom.js';
 import { api } from '../core/api.js';
 import { page, sign, section, panel, loading, errorView, notice, toast, confirm } from '../core/ui.js';
 import { onLeave } from '../core/router.js';
-import { isAndroid, native } from '../core/native.js';
+import { list as localList, download, remove as removeLocal, localMapsAvailable } from '../core/localmaps.js';
 import { isAdmin } from '../core/state.js';
 import { bytes, fecha } from '../core/format.js';
 
@@ -39,18 +39,18 @@ function regionRow(r, local, rerender) {
     toast('El servidor está preparando el mapa');
   });
 
-  if (isAndroid) {
+  if (localMapsAvailable()) {
     const outdated = loc && loc.estado === 'descargado' && ready && loc.version !== r.version;
     if (!busyState) {
       if (ready && (!loc || loc.estado !== 'descargado' || outdated)) {
-        parts.push(sign({ text: outdated ? 'Actualizar' : 'Descargar', ico: 'download', small: true, color: 'green', onClick: () => act(() => native.mapDownload({ ...r, server_url: r.url })) }));
+        parts.push(sign({ text: outdated ? 'Actualizar' : 'Descargar', ico: 'download', small: true, color: 'green', onClick: () => act(() => download(r)) }));
       } else if (!ready) {
         parts.push(sign({ text: 'Preparar', ico: 'refresh', small: true, onClick: prepare }));
       }
       if (loc && loc.estado === 'descargado') {
         parts.push(sign({
           text: 'Borrar del móvil', ico: 'trash', small: true, color: 'red',
-          onClick: async () => { if (await confirm(`¿Borrar el mapa de ${r.nombre} del móvil?`, { danger: true, ok: 'Borrar' })) act(() => native.mapDelete(r.id)); },
+          onClick: async () => { if (await confirm(`¿Borrar el mapa de ${r.nombre} del móvil?`, { danger: true, ok: 'Borrar' })) act(() => removeLocal(r.id)); },
         }));
       }
     }
@@ -78,17 +78,17 @@ export async function view() {
     try {
       cat = await api('/api/maps/catalogo');
     } catch (e) {
-      const local = isAndroid ? native.mapsLocal() : [];
+      const local = localMapsAvailable() ? localList() : [];
       return page({
         title: 'Mapas', back: '/ajustes',
         body: [...errorView(e, render), ...(local.length ? [section('En el móvil'), ...local.map((l) => panel(h('strong', l.nombre), h('div.muted', `${bytes(l.tamano)} · versión ${l.version}`)))] : [])],
       });
     }
-    const local = isAndroid ? native.mapsLocal() : [];
+    const local = localMapsAvailable() ? localList() : [];
     const body = [
-      notice(isAndroid
-        ? 'Descarga los mapas de las zonas por las que trabajas para poder elegir direcciones en el mapa sin cobertura.'
-        : 'Los mapas para usar sin conexión se descargan desde la app Android. Aquí puedes pedir al servidor que los prepare.', 'info', 'map'),
+      notice(localMapsAvailable()
+        ? 'Descarga los mapas de las zonas por las que trabajas para poder elegir direcciones en el mapa sin cobertura. En iPhone, deja la aplicación abierta mientras se descargan.'
+        : 'Los mapas para usar sin conexión se descargan desde la app Android o la aplicación instalada en el iPhone. Aquí puedes pedir al servidor que los prepare.', 'info', 'map'),
     ];
     for (const g of cat.grupos) {
       body.push(section(g.nombre));

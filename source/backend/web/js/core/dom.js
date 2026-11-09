@@ -86,6 +86,7 @@ const P = {
   search: '<circle cx="20" cy="20" r="13"/><path d="M30 30l13 13"/>',
   weight: '<path d="M13 16h22l6 28H7z"/><circle cx="24" cy="10" r="5"/>',
   send: '<path d="M4 22 44 5 30 44l-8-15z"/><path d="M22 29l22-24"/>',
+  share: '<path d="M24 30V5M14 14 24 4l10 10"/><path d="M15 20H8v24h32V20h-7"/>',
   eye: '<path d="M2 24s8-14 22-14 22 14 22 14-8 14-22 14S2 24 2 24z"/><circle cx="24" cy="24" r="6"/>',
 };
 

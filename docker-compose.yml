@@ -1,6 +1,6 @@
 # DeCA · despliegue con Docker Compose
 #
-#   1. docker load -i deca-server-0.1.0-amd64.tar.gz      (o docker pull de tu registro)
+#   1. docker pull ghcr.io/fernando433566/deca-server:latest
 #   2. cp .env.example .env  y edita los valores
 #   3. docker compose up -d
 #
@@ -11,7 +11,7 @@ name: deca
 services:
   deca:
     # Imagen del servidor (backend Rust + aplicación web del puerto 8134).
-    image: ${DECA_IMAGE:-deca-server:0.1.0}
+    image: ${DECA_IMAGE:-ghcr.io/fernando433566/deca-server:latest}
     container_name: deca-server
     restart: unless-stopped
     platform: linux/amd64

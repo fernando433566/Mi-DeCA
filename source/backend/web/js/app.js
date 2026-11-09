@@ -5,6 +5,8 @@ import { route, startRouter, go, currentPath } from './core/router.js';
 import { isAndroid } from './core/native.js';
 import { toast } from './core/ui.js';
 import { state, setNet } from './core/state.js';
+import { registerOfflineApp } from './core/platform.js';
+import { startQueue } from './core/queue.js';
 
 import * as login from './views/login.js';
 import * as setup from './views/setup.js';
@@ -17,14 +19,17 @@ import * as workers from './views/workers.js';
 import * as prefs from './views/prefs.js';
 import * as account from './views/account.js';
 import * as vehicles from './views/vehicles.js';
+import * as parties from './views/parties.js';
 import * as server from './views/server.js';
 import * as maps from './views/maps.js';
+import * as install from './views/install.js';
 
 
-const PUBLIC_ROUTES = ['/login'];
+const PUBLIC_ROUTES = ['/login', '/instalar'];
 
 // ---------------- Rutas ----------------
 route('/login', login.view);
+route('/instalar', install.view);
 route('/setup', setup.view);
 route('/', home.view);
 route('/nuevo', decaForm.createView);
@@ -36,6 +41,7 @@ route('/ajustes', settings.view);
 route('/ajustes/preferencias', prefs.ownView);
 route('/ajustes/cuenta', account.view);
 route('/ajustes/vehiculos', vehicles.view);
+route('/ajustes/empresas', parties.view);
 route('/ajustes/mapas', maps.view);
 route('/empresa/nueva', company.createView);
 route('/empresa/:cid', company.menuView);
@@ -110,4 +116,6 @@ window.__decaQueueChanged = () => {
   if (currentPath() === '/') home.view();
 };
 
+registerOfflineApp();
 startRouter(guard);
+startQueue();

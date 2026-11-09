@@ -63,8 +63,9 @@ async fn company_for(state: &AppState, user: &CurrentUser, requested: Option<i64
             None => Err(AppError::bad("Tu cuenta no pertenece a ninguna empresa. Avisa al administrador")),
         };
     }
-    if requested.is_some() {
-        return Ok(requested);
+    // Un administrador puede elegir empresa; si no, emite con la suya.
+    if requested.or(user.company_id).is_some() {
+        return Ok(requested.or(user.company_id));
     }
     Ok(sqlx::query_scalar("SELECT id FROM companies ORDER BY id LIMIT 1")
         .fetch_optional(&state.pool)

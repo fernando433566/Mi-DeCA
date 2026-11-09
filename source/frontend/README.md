@@ -57,7 +57,7 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 Antes de compilar, Gradle copia `../backend/web` dentro de la app (tarea `copyWeb`), así que cualquier cambio en la web llega a la web y a la app.
 
 **Firma de la versión de publicación.** La clave **no** está en el repositorio. `assembleRelease` la busca en
-`../../secrets/keystore.properties` (o en la ruta de la variable `DECA_KEYSTORE_PROPERTIES`):
+`../../../secrets/keystore.properties` (o en la ruta de la variable `DECA_KEYSTORE_PROPERTIES`):
 
 ```properties
 storeFile=deca-release.jks

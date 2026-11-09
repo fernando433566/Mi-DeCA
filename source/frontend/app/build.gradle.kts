@@ -5,12 +5,12 @@ plugins {
 }
 
 // Clave de firma de la versión de publicación. NO está en el repositorio: se lee de
-// ../../secrets/keystore.properties (o de la ruta en la variable DECA_KEYSTORE_PROPERTIES).
+// DeCA/secrets/keystore.properties, fuera del repositorio (o de la ruta en la variable DECA_KEYSTORE_PROPERTIES).
 val keystoreProps = Properties().apply {
-    val f = file(System.getenv("DECA_KEYSTORE_PROPERTIES") ?: "../../../secrets/keystore.properties")
+    val f = file(System.getenv("DECA_KEYSTORE_PROPERTIES") ?: "../../../../secrets/keystore.properties")
     if (f.exists()) f.inputStream().use { load(it) }
 }
-val keystoreDir = file(System.getenv("DECA_KEYSTORE_PROPERTIES") ?: "../../../secrets/keystore.properties").parentFile
+val keystoreDir = file(System.getenv("DECA_KEYSTORE_PROPERTIES") ?: "../../../../secrets/keystore.properties").parentFile
 
 android {
     namespace = "es.deca.app"
@@ -20,8 +20,8 @@ android {
         applicationId = "es.deca.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
     }
 
     // La interfaz es la misma aplicación web que sirve el servidor (source/backend/web):

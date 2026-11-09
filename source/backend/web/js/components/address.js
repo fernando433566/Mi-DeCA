@@ -7,7 +7,8 @@ import { input as mkInput } from '../core/ui.js';
 import { combo, matches } from './combo.js';
 import * as catalog from './catalog.js';
 
-export function addressInput({ value = '', placeholder = 'Calle, número, población', onChange } = {}) {
+/** `companyPlaces`: función opcional que devuelve las ubicaciones de las empresas del DeCA. */
+export function addressInput({ value = '', placeholder = 'Calle, número, población', onChange, companyPlaces } = {}) {
   const inp = mkInput({ value, placeholder });
   inp.addEventListener('input', () => onChange && onChange(inp.value));
   const set = (v) => {
@@ -19,6 +20,10 @@ export function addressInput({ value = '', placeholder = 'Calle, número, poblac
     minChars: 0,
     delay: 400,
     suggest: async (q) => {
+      const own = companyPlaces ? await companyPlaces() : [];
+      const ownItems = own
+        .filter((u) => !q || matches(q, u.nombre, u.direccion))
+        .map((u) => ({ label: u.nombre, sub: u.nombre !== u.direccion ? u.direccion : '', src: 'EMPRESA', value: u.direccion }));
       const places = await catalog.load('places');
       const saved = places
         .filter((p) => !q || matches(q, p.nombre, p.direccion))
@@ -31,7 +36,8 @@ export function addressInput({ value = '', placeholder = 'Calle, número, poblac
           osm = r.map((x) => ({ label: x.direccion, src: 'MAPA', value: x.direccion }));
         } catch { /* sin conexión: solo las guardadas */ }
       }
-      return [...saved, ...osm];
+      const seen = new Set(ownItems.map((i) => i.value));
+      return [...ownItems, ...saved.filter((i) => !seen.has(i.value)), ...osm];
     },
     onPick: (it) => set(it.value),
   });

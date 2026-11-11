@@ -28,7 +28,7 @@ Abre `http://<ip-del-equipo>:8134` y entra con **`Admin` / `1234`**. Un asistent
 
 | Variable | Por defecto | Para qué |
 |---|---|---|
-| `DECA_IMAGE` | `deca-server:0.2.0` | Imagen. Si la subes a un registro (por ejemplo `ghcr.io/<usuario>/deca-server:0.2.0`), con esto se descarga con `docker compose pull` |
+| `DECA_IMAGE` | `deca-server:0.2.0` | Imagen. Se puede descargar ya compilada o a través de docker pull` |
 | `DECA_PUBLIC_URL` | vacío | Enlace **HTTPS** de Cloudflare Tunnel con el que se accede desde fuera y que va en los QR. Si se deja vacío, se detecta y se comprueba solo la primera vez que alguien entra por el túnel |
 | `DECA_BIND_ADDRESS` | `0.0.0.0` | `0.0.0.0` = accesible desde la red local; `127.0.0.1` = solo desde este equipo (si solo se entra por el túnel) |
 | `DECA_HOST_PORT` | `8134` | Puerto en el equipo anfitrión. Dentro del contenedor siempre es 8134 |
@@ -53,15 +53,6 @@ docker compose pull && docker compose up -d   # actualizar (si usas un registro)
 ```
 
 Las copias de seguridad se hacen desde la propia aplicación: Ajustes → Servidor → Crear copia de seguridad.
-
-### Publicar la imagen en un registro (opcional)
-
-```bash
-docker tag deca-server:0.2.0 ghcr.io/<usuario>/deca-server:0.2.0
-docker login ghcr.io && docker push ghcr.io/<usuario>/deca-server:0.2.0
-```
-
-Después, en otros equipos basta con poner ese nombre en `DECA_IMAGE` y ejecutar `docker compose pull`.
 
 ## 2. App Android
 

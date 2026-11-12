@@ -94,6 +94,14 @@ pub async fn import_json(pool: &SqlitePool, backup: &Value) -> anyhow::Result<()
             q.execute(&mut *tx).await.with_context(|| format!("error restaurando la tabla {t}"))?;
         }
     }
+    // Sin un administrador activo nadie podría volver a entrar.
+    let admins: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE role = 'admin' AND active = 1")
+        .fetch_one(&mut *tx).await?;
+    if admins == 0 {
+        bail!("la copia no contiene ningún administrador activo");
+    }
+    // Los administradores restaurados con la contraseña inicial solo podrán cambiarla.
+    crate::db::bootstrap::flag_default_passwords(&mut tx).await?;
     tx.commit().await?;
     Ok(())
 }

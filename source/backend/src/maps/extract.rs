@@ -4,7 +4,7 @@
 //!
 //! Fichero resultante: cabecera | raíz (reservados 16 KiB) | teselas | metadatos | hojas
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
@@ -24,6 +24,25 @@ const MAX_GAP: u64 = 256 * 1024;
 /// …mientras la petición no supere este tamaño.
 const MAX_BATCH: u64 = 16 * 1024 * 1024;
 
+/// Presupuesto independiente del contenido del proveedor para terminar el recorrido.
+#[derive(Default)]
+struct DirectoryTraversal {
+    depth: usize,
+    visited: HashSet<(u64, u64)>,
+}
+impl DirectoryTraversal {
+    fn next_level(&mut self) -> anyhow::Result<()> {
+        self.depth += 1;
+        ensure!(self.depth <= 16, "demasiados niveles de directorios PMTiles");
+        Ok(())
+    }
+    fn visit(&mut self, offset: u64, length: u64) -> anyhow::Result<()> {
+        ensure!(self.visited.len() < 100_000, "demasiados directorios PMTiles");
+        ensure!(self.visited.insert((offset, length)), "directorio PMTiles repetido o cíclico");
+        Ok(())
+    }
+}
+
 pub struct Remote {
     pub http: reqwest::Client,
     pub url: String,
@@ -35,21 +54,34 @@ impl Remote {
         if len == 0 {
             return Ok(Vec::new());
         }
+        ensure!(len <= MAX_BATCH, "rango PMTiles demasiado grande");
+        let end = offset.checked_add(len - 1).context("rango PMTiles desbordado")?;
         let mut wait = Duration::from_secs(2);
         let mut last_err = None;
         for _ in 0..5 {
             let res = self
                 .http
                 .get(&self.url)
-                .header(reqwest::header::RANGE, format!("bytes={}-{}", offset, offset + len - 1))
+                .header(reqwest::header::RANGE, format!("bytes={}-{}", offset, end))
                 .timeout(Duration::from_secs(300))
                 .send()
                 .await;
             match res {
-                Ok(r) if r.status() == reqwest::StatusCode::PARTIAL_CONTENT => match r.bytes().await {
-                    Ok(b) if b.len() as u64 == len => return Ok(b.to_vec()),
-                    Ok(b) => last_err = Some(anyhow::anyhow!("respuesta incompleta ({} de {len} bytes)", b.len())),
-                    Err(e) => last_err = Some(e.into()),
+                Ok(mut r) if r.status() == reqwest::StatusCode::PARTIAL_CONTENT => {
+                    let mut bytes = Vec::new();
+                    let mut error = None;
+                    loop {
+                        match r.chunk().await {
+                            Ok(Some(chunk)) => {
+                                ensure!(bytes.len() as u64 + chunk.len() as u64 <= len, "respuesta PMTiles mayor que el rango solicitado");
+                                bytes.extend_from_slice(&chunk);
+                            }
+                            Ok(None) => break,
+                            Err(e) => { error = Some(e); break; }
+                        }
+                    }
+                    if error.is_none() && bytes.len() as u64 == len { return Ok(bytes); }
+                    last_err = Some(anyhow::anyhow!("respuesta PMTiles incompleta"));
                 },
                 Ok(r) => last_err = Some(anyhow::anyhow!("el servidor de mapas respondió {}", r.status())),
                 Err(e) => last_err = Some(e.into()),
@@ -96,8 +128,10 @@ pub async fn extract(remote: &Remote, bbox: &BBox, max_zoom: u8, dest: &Path, pr
     let head = remote.range(0, 16_384).await.context("no se pudo leer la cabecera del mapa")?;
     let h = Header::parse(&head)?;
     let max_zoom = max_zoom.min(h.max_zoom);
-    let root_raw = if h.root_offset + h.root_length <= head.len() as u64 {
-        head[h.root_offset as usize..(h.root_offset + h.root_length) as usize].to_vec()
+    ensure!(h.min_zoom <= max_zoom && max_zoom <= 15, "zoom PMTiles fuera del límite");
+    let root_end = h.root_offset.checked_add(h.root_length).context("raíz PMTiles desbordada")?;
+    let root_raw = if root_end <= head.len() as u64 {
+        head[h.root_offset as usize..root_end as usize].to_vec()
     } else {
         remote.range(h.root_offset, h.root_length).await?
     };
@@ -120,20 +154,28 @@ pub async fn extract(remote: &Remote, bbox: &BBox, max_zoom: u8, dest: &Path, pr
     // 3. Recorrer directorios (raíz -> hojas) recogiendo las teselas de la zona.
     let mut found: Vec<(u64, u64, u32)> = Vec::new(); // (id, desplazamiento origen, longitud)
     let mut level: Vec<(Vec<Entry>, u64)> = vec![(root, u64::MAX)];
+    let mut traversal = DirectoryTraversal::default();
     while !level.is_empty() {
+        traversal.next_level()?;
         let mut leaves: Vec<(u64, u64, u64)> = Vec::new(); // (offset, len, límite superior)
         for (entries, upper) in &level {
             for (i, e) in entries.iter().enumerate() {
                 if e.run_length > 0 {
-                    let end = e.tile_id + e.run_length as u64;
+                    let end = e.tile_id.checked_add(e.run_length as u64).context("rango de teselas desbordado")?;
                     let start_idx = needed.partition_point(|&id| id < e.tile_id);
                     for &id in needed[start_idx..].iter().take_while(|&&id| id < end) {
-                        found.push((id, h.data_offset + e.offset, e.length));
+                        let offset = h.data_offset.checked_add(e.offset).context("desplazamiento de tesela desbordado")?;
+                        offset.checked_add(e.length as u64).context("longitud de tesela desbordada")?;
+                        ensure!(e.length as u64 <= MAX_BATCH, "tesela demasiado grande");
+                        found.push((id, offset, e.length));
                     }
                 } else {
                     let end = entries.get(i + 1).map(|n| n.tile_id).unwrap_or(*upper);
                     if any_in(&needed, e.tile_id, end) {
-                        leaves.push((h.leaf_offset + e.offset, e.length as u64, end));
+                        let offset = h.leaf_offset.checked_add(e.offset).context("desplazamiento de hoja desbordado")?;
+                        offset.checked_add(e.length as u64).context("longitud de hoja desbordada")?;
+                        traversal.visit(offset, e.length as u64)?;
+                        leaves.push((offset, e.length as u64, end));
                     }
                 }
             }
@@ -296,4 +338,17 @@ pub fn verify_local(bytes: &[u8]) -> anyhow::Result<u64> {
         }
     }
     Ok(tiles)
+}
+
+#[cfg(test)]
+mod security_tests {
+    use super::*;
+    #[test]
+    fn repeated_leaf_and_excess_depth_are_rejected() {
+        let mut traversal = DirectoryTraversal::default();
+        traversal.visit(16384, 8).unwrap();
+        assert!(traversal.visit(16384, 8).is_err());
+        for _ in 0..16 { traversal.next_level().unwrap(); }
+        assert!(traversal.next_level().is_err());
+    }
 }

@@ -20,6 +20,8 @@ pub enum AppError {
     Unauthorized,
     #[error("No tienes permiso para hacer esto")]
     Forbidden,
+    #[error("Cambia la contraseña inicial antes de continuar")]
+    PasswordChangeRequired,
     #[error("{0}")]
     NotFound(String),
     #[error("{0}")]
@@ -47,6 +49,7 @@ impl AppError {
             Self::TotpRequired => (StatusCode::UNAUTHORIZED, "requiere_2fa"),
             Self::Unauthorized => (StatusCode::UNAUTHORIZED, "sesion"),
             Self::Forbidden => (StatusCode::FORBIDDEN, "prohibido"),
+            Self::PasswordChangeRequired => (StatusCode::FORBIDDEN, "cambiar_contrasena"),
             Self::NotFound(_) => (StatusCode::NOT_FOUND, "no_encontrado"),
             Self::Conflict(_) => (StatusCode::CONFLICT, "conflicto"),
             Self::Gone(_) => (StatusCode::GONE, "caducado"),

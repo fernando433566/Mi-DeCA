@@ -46,6 +46,11 @@ export const session = {
   },
 };
 
+/** Identidad de una operación: los cambios del perfil no cambian de cuenta. */
+export function sessionIdentity(s = session.get()) {
+  return s ? JSON.stringify([s.server, s.user && s.user.id, s.token]) : '';
+}
+
 /** Dirección del servidor: en la web es la propia página; en Android, la elegida al iniciar sesión. */
 export function serverBase() {
   const s = session.get();
@@ -71,6 +76,12 @@ export function setUnauthorizedHandler(fn) {
  */
 export async function api(path, { method = 'GET', body, server, token, raw = false, timeout = 25000 } = {}) {
   const s = session.get();
+  const requestIdentity = sessionIdentity(s);
+  const ensureCurrentSession = () => {
+    if (sessionIdentity() !== requestIdentity) {
+      throw new ApiError('La cuenta ha cambiado; vuelve a abrir la pantalla', 409, 'session_changed');
+    }
+  };
   const base = server || serverBase();
   const tk = token !== undefined ? token : s && s.token;
   const headers = {};
@@ -86,15 +97,18 @@ export async function api(path, { method = 'GET', body, server, token, raw = fal
   try {
     res = await fetch(base + path, { method, headers, body: payload, signal: ctrl.signal });
   } catch {
+    ensureCurrentSession();
     window.dispatchEvent(new Event('deca:offline'));
     throw new OfflineError();
   } finally {
     clearTimeout(timer);
   }
+  ensureCurrentSession();
   window.dispatchEvent(new Event('deca:online'));
   if (raw && res.ok) return res;
   let data = null;
   const text = await res.text();
+  ensureCurrentSession();
   try {
     data = text ? JSON.parse(text) : null;
   } catch {
@@ -111,8 +125,7 @@ export async function api(path, { method = 'GET', body, server, token, raw = fal
 
 // ---------------- Caché local (para enseñar los DeCA sin cobertura) ----------------
 
-function cacheKey(name) {
-  const s = session.get();
+function cacheKey(name, s = session.get()) {
   return `deca.cache.${s ? s.server + '|' + (s.user && s.user.id) : 'anon'}.${name}`;
 }
 export const cache = {
@@ -125,13 +138,22 @@ export const cache = {
  * marcado con `__offline = true`.
  */
 export async function cachedGet(path, name) {
+  const owner = sessionIdentity();
+  const key = cacheKey(name);
+  const ensureOwner = () => {
+    if (sessionIdentity() !== owner) {
+      throw new ApiError('La cuenta ha cambiado; vuelve a abrir la pantalla', 409, 'session_changed');
+    }
+  };
   try {
     const data = await api(path);
-    cache.set(name, data);
+    ensureOwner();
+    save(key, data);
     return data;
   } catch (e) {
+    ensureOwner();
     if (e.offline) {
-      const c = cache.get(name);
+      const c = load(key, null);
       if (c !== null) {
         if (typeof c === 'object') Object.defineProperty(c, '__offline', { value: true });
         return c;
@@ -151,6 +173,9 @@ export async function downloadFile(path, fileName, mime) {
   }
   const res = await api(path, { raw: true, timeout: 600000 });
   const blob = await res.blob();
+  if (sessionIdentity(s) !== sessionIdentity()) {
+    throw new ApiError('La cuenta ha cambiado; vuelve a descargar el fichero', 409, 'session_changed');
+  }
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

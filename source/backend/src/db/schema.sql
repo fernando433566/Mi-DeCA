@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS users (
     -- Preferencias que el propio trabajador fija
     prefs_own           TEXT NOT NULL DEFAULT '{}',
     active              INTEGER NOT NULL DEFAULT 1,
+    -- Administrador con la contraseña inicial: solo puede cambiarla
+    must_change_password INTEGER NOT NULL DEFAULT 0,
     created_at          TEXT NOT NULL,
     updated_at          TEXT NOT NULL
 );

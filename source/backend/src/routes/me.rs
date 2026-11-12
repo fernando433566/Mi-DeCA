@@ -7,7 +7,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use super::auth::{user_info, UserInfo};
-use crate::auth::{password, totp, CurrentUser};
+use crate::auth::{hash_token, password, totp, CurrentUser};
 use crate::deca::qr;
 use crate::error::{AppError, AppResult};
 use crate::preferences::{self, Prefs};
@@ -57,7 +57,7 @@ struct ChangePassword {
     nueva: String,
 }
 
-async fn change_password(State(state): State<AppState>, user: CurrentUser, Json(req): Json<ChangePassword>) -> AppResult<Json<Value>> {
+async fn change_password(State(state): State<AppState>, user: CurrentUser, headers: axum::http::HeaderMap, Json(req): Json<ChangePassword>) -> AppResult<Json<Value>> {
     let (hash,): (String,) = sqlx::query_as("SELECT password_hash FROM users WHERE id = ?")
         .bind(user.id)
         .fetch_one(&state.pool)
@@ -66,23 +66,26 @@ async fn change_password(State(state): State<AppState>, user: CurrentUser, Json(
         return Err(AppError::bad("La contraseña actual no es correcta"));
     }
     password::validate_new(&req.nueva).map_err(AppError::BadRequest)?;
-    sqlx::query("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?")
-        .bind(password::hash(&req.nueva)?)
-        .bind(Utc::now())
-        .bind(user.id)
-        .execute(&state.pool)
-        .await?;
+    // Conserva únicamente la sesión que acaba de demostrar la contraseña actual.
+    let current = headers.get(axum::http::header::AUTHORIZATION)
+        .and_then(|h| h.to_str().ok()).and_then(|h| h.strip_prefix("Bearer "))
+        .map(|t| hash_token(t.trim())).ok_or(AppError::Unauthorized)?;
+    crate::auth::update_password(&state.pool, user.id, &password::hash(&req.nueva)?,
+        Some(&hash), Some(&current)).await?;
     Ok(Json(json!({ "ok": true, "mensaje": "Contraseña cambiada" })))
 }
 
 /// Paso 1: genera un secreto y devuelve el QR para la app de autenticación.
 async fn totp_start(State(state): State<AppState>, user: CurrentUser) -> AppResult<Json<Value>> {
     let secret = totp::generate_secret();
-    sqlx::query("UPDATE users SET totp_pending_secret = ? WHERE id = ?")
+    let updated = sqlx::query("UPDATE users SET totp_pending_secret = ? WHERE id = ? AND totp_enabled = 0")
         .bind(&secret)
         .bind(user.id)
         .execute(&state.pool)
         .await?;
+    if updated.rows_affected() != 1 {
+        return Err(AppError::bad("Desactiva primero la verificación actual con su código"));
+    }
     let url = totp::otpauth_url(&secret, "DeCA", &user.username);
     Ok(Json(json!({
         "secreto": secret,
@@ -99,20 +102,23 @@ struct Code {
 
 /// Paso 2: confirma con un código válido y activa la verificación en dos pasos.
 async fn totp_enable(State(state): State<AppState>, user: CurrentUser, Json(req): Json<Code>) -> AppResult<Json<Value>> {
-    let (pending,): (Option<String>,) = sqlx::query_as("SELECT totp_pending_secret FROM users WHERE id = ?")
+    let (pending,): (Option<String>,) = sqlx::query_as("SELECT totp_pending_secret FROM users WHERE id = ? AND totp_enabled = 0")
         .bind(user.id)
-        .fetch_one(&state.pool)
-        .await?;
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(|| AppError::bad("La verificación ya está activada"))?;
     let pending = pending.ok_or_else(|| AppError::bad("Primero pulsa «Añadir código de verificación»"))?;
     if !totp::verify(&pending, &req.codigo) {
         return Err(AppError::bad("Código incorrecto. Revisa la hora del móvil y prueba otra vez"));
     }
-    sqlx::query("UPDATE users SET totp_secret = ?, totp_enabled = 1, totp_pending_secret = NULL, updated_at = ? WHERE id = ?")
+    let updated = sqlx::query("UPDATE users SET totp_secret = ?, totp_enabled = 1, totp_pending_secret = NULL, updated_at = ? WHERE id = ? AND totp_enabled = 0 AND totp_pending_secret = ?")
         .bind(&pending)
         .bind(Utc::now())
         .bind(user.id)
+        .bind(&pending)
         .execute(&state.pool)
         .await?;
+    if updated.rows_affected() != 1 { return Err(AppError::bad("La configuración 2FA ha cambiado; vuelve a empezar")); }
     Ok(Json(json!({ "ok": true, "mensaje": "Verificación en dos pasos activada" })))
 }
 
@@ -124,11 +130,10 @@ async fn totp_disable(State(state): State<AppState>, user: CurrentUser, Json(req
     if !totp::verify(secret.as_deref().unwrap_or(""), &req.codigo) {
         return Err(AppError::bad("Código incorrecto"));
     }
-    sqlx::query("UPDATE users SET totp_secret = NULL, totp_enabled = 0, updated_at = ? WHERE id = ?")
-        .bind(Utc::now())
-        .bind(user.id)
-        .execute(&state.pool)
-        .await?;
+    let updated = sqlx::query("UPDATE users SET totp_secret = NULL, totp_enabled = 0, totp_pending_secret = NULL, updated_at = ? WHERE id = ? AND totp_enabled = 1 AND totp_secret IS ?")
+        .bind(Utc::now()).bind(user.id).bind(secret.as_deref())
+        .execute(&state.pool).await?;
+    if updated.rows_affected() != 1 { return Err(AppError::bad("La configuración 2FA ha cambiado; vuelve a empezar")); }
     Ok(Json(json!({ "ok": true, "mensaje": "Verificación en dos pasos desactivada" })))
 }
 

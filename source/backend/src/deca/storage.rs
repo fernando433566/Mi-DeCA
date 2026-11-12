@@ -55,9 +55,33 @@ impl Location {
     }
 }
 
-/// Calcula una ubicación libre (si ya existe un fichero con ese nombre, por ejemplo
-/// varios viajes en el mismo segundo, añade `-2`, `-3`...).
-pub fn new_location(deca_dir: &Path, worker: &str, plate: &str, at: DateTime<Utc>) -> Location {
+/// Nombre libre **reservado** en disco: se crea el fichero vacío de forma exclusiva
+/// (`create_new`), así dos emisiones simultáneas nunca eligen el mismo nombre.
+/// Si ya existe (varios viajes en el mismo segundo, mismo trabajador y camión…)
+/// se prueba `-2`, `-3`… Si la emisión falla antes de [`Reserved::keep`], el
+/// fichero reservado se borra solo.
+pub struct Reserved {
+    pub location: Location,
+    path: PathBuf,
+    kept: bool,
+}
+
+impl Reserved {
+    /// La emisión se ha confirmado: el fichero ya contiene el PDF y se conserva.
+    pub fn keep(mut self) {
+        self.kept = true;
+    }
+}
+
+impl Drop for Reserved {
+    fn drop(&mut self) {
+        if !self.kept {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+}
+
+pub fn reserve_location(deca_dir: &Path, worker: &str, plate: &str, at: DateTime<Utc>) -> std::io::Result<Reserved> {
     let t = at.with_timezone(&Madrid);
     let rel_dir = t.format("%Y/%m/%d").to_string();
     let base = format!(
@@ -67,13 +91,17 @@ pub fn new_location(deca_dir: &Path, worker: &str, plate: &str, at: DateTime<Utc
         t.format("%d-%m-%Y-%H-%M-%S")
     );
     let dir = deca_dir.join(&rel_dir);
-    let mut file_name = format!("{base}.pdf");
-    let mut n = 2;
-    while dir.join(&file_name).exists() {
-        file_name = format!("{base}-{n}.pdf");
-        n += 1;
+    std::fs::create_dir_all(&dir)?;
+    for n in 1..=1000 {
+        let file_name = if n == 1 { format!("{base}.pdf") } else { format!("{base}-{n}.pdf") };
+        let path = dir.join(&file_name);
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(_) => return Ok(Reserved { location: Location { rel_dir, file_name }, path, kept: false }),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
     }
-    Location { rel_dir, file_name }
+    Err(std::io::Error::other("no queda ningún nombre libre para el PDF"))
 }
 
 /// Ruta absoluta segura a partir de una ruta relativa guardada en la base de datos.
@@ -91,9 +119,16 @@ pub async fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
-    let tmp = path.with_extension("pdf.tmp");
-    tokio::fs::write(&tmp, bytes).await?;
-    tokio::fs::rename(&tmp, path).await
+    let tmp = path.with_extension(format!("{}.tmp", uuid::Uuid::new_v4()));
+    use tokio::io::AsyncWriteExt;
+    let result = async {
+        let mut file = tokio::fs::OpenOptions::new().write(true).create_new(true).open(&tmp).await?;
+        file.write_all(bytes).await?;
+        file.sync_all().await?;
+        tokio::fs::rename(&tmp, path).await
+    }.await;
+    if result.is_err() { let _ = tokio::fs::remove_file(&tmp).await; }
+    result
 }
 
 #[cfg(test)]

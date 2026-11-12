@@ -506,10 +506,12 @@ pub async fn remember(s: &AppState, user_id: i64, d: &DecaDatos) -> AppResult<()
             "INSERT OR IGNORE INTO party_places (party_id, place_id)
              SELECT py.id, pl.id FROM parties py, places pl
              WHERE py.tipo = 'cargador' AND py.nif = ?1 AND pl.direccion = ?2
+               AND (py.created_by = ?3 OR EXISTS (SELECT 1 FROM users WHERE id = ?3 AND role = 'admin' AND active = 1))
                AND NOT EXISTS (SELECT 1 FROM party_places x WHERE x.party_id = py.id)",
         )
         .bind(&d.cargador.nif)
         .bind(&first.origen)
+        .bind(user_id)
         .execute(&s.pool)
         .await?;
     }
@@ -522,4 +524,24 @@ pub async fn remember(s: &AppState, user_id: i64, d: &DecaDatos) -> AppResult<()
         .execute(&s.pool)
         .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod security_tests {
+    use super::*;
+    #[tokio::test]
+    async fn learning_cannot_add_locations_to_another_owners_party() {
+        let (state, _) = crate::security_tests::fixture().await;
+        sqlx::query("INSERT INTO parties(tipo,nombre,nif,domicilio,created_by,created_at) VALUES('cargador','Dummy C','DUMMYC','A',1,?)")
+            .bind(Utc::now()).execute(&state.pool).await.unwrap();
+        let data: DecaDatos = serde_json::from_value(crate::security_tests::document()).unwrap();
+        remember(&state, 2, &data).await.unwrap();
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM party_places")
+            .fetch_one(&state.pool).await.unwrap();
+        assert_eq!(count, 0, "learning wrote another owner's party");
+        remember(&state, 1, &data).await.unwrap();
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM party_places")
+            .fetch_one(&state.pool).await.unwrap();
+        assert_eq!(count, 1, "owner/admin learning must keep working");
+    }
 }

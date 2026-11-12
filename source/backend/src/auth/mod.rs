@@ -64,29 +64,54 @@ pub fn hash_token(token: &str) -> String {
     data_encoding::HEXLOWER.encode(&digest)
 }
 
-/// Crea una sesión y devuelve el token en claro (solo se entrega una vez).
-pub async fn create_session(pool: &SqlitePool, user_id: i64) -> Result<(String, DateTime<Utc>), AppError> {
+/// Emite una sesión usando la misma conexión que validó un QR, o comparando
+/// atómicamente la contraseña y el factor comprobados durante el login.
+pub async fn issue_session(connection: &mut sqlx::SqliteConnection, user_id: i64,
+    verified_password: Option<&str>, totp_enabled: bool, totp_secret: Option<&str>)
+    -> Result<(String, DateTime<Utc>), AppError> {
     let token = random_token();
     let now = Utc::now();
     let expires = now + Duration::days(SESSION_DAYS);
-    sqlx::query(
-        "INSERT INTO sessions (token_hash, user_id, created_at, expires_at, last_used_at) VALUES (?, ?, ?, ?, ?)",
+    let inserted = sqlx::query(
+        "INSERT INTO sessions (token_hash, user_id, created_at, expires_at, last_used_at)
+         SELECT ?, id, ?, ?, ? FROM users WHERE id = ? AND active = 1
+         AND (? IS NULL OR (password_hash = ? AND totp_enabled = ? AND totp_secret IS ?))",
     )
-    .bind(hash_token(&token))
-    .bind(user_id)
-    .bind(now)
-    .bind(expires)
-    .bind(now)
-    .execute(pool)
-    .await?;
+    .bind(hash_token(&token)).bind(now).bind(expires).bind(now).bind(user_id)
+    .bind(verified_password).bind(verified_password).bind(totp_enabled).bind(totp_secret)
+    .execute(connection).await?;
+    if inserted.rows_affected() != 1 { return Err(AppError::Unauthorized); }
     Ok((token, expires))
 }
 
+#[cfg(test)]
+pub async fn create_session(pool: &SqlitePool, user_id: i64) -> Result<(String, DateTime<Utc>), AppError> {
+    issue_session(&mut *pool.acquire().await?, user_id, None, false, None).await
+}
+
 pub async fn delete_user_sessions(pool: &SqlitePool, user_id: i64) -> Result<(), AppError> {
+    let mut tx = pool.begin().await?;
     sqlx::query("DELETE FROM sessions WHERE user_id = ?")
-        .bind(user_id)
-        .execute(pool)
-        .await?;
+        .bind(user_id).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM qr_logins WHERE user_id = ?")
+        .bind(user_id).execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Cambia la clave y revoca sus credenciales en la misma transacción.
+/// `expected_hash` evita aplicar una comprobación de contraseña que ya quedó obsoleta.
+pub async fn update_password(pool: &SqlitePool, user_id: i64, new_hash: &str,
+    expected_hash: Option<&str>, keep_session_hash: Option<&str>) -> Result<(), AppError> {
+    let mut tx = pool.begin().await?;
+    let updated = sqlx::query("UPDATE users SET password_hash = ?, must_change_password = 0, updated_at = ? WHERE id = ? AND active = 1 AND (? IS NULL OR password_hash = ?)")
+        .bind(new_hash).bind(Utc::now()).bind(user_id).bind(expected_hash).bind(expected_hash)
+        .execute(&mut *tx).await?;
+    if updated.rows_affected() != 1 { return Err(AppError::Unauthorized); }
+    sqlx::query("DELETE FROM sessions WHERE user_id = ? AND (? IS NULL OR token_hash != ?)")
+        .bind(user_id).bind(keep_session_hash).bind(keep_session_hash).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM qr_logins WHERE user_id = ?").bind(user_id).execute(&mut *tx).await?;
+    tx.commit().await?;
     Ok(())
 }
 
@@ -100,6 +125,17 @@ fn bearer(parts: &Parts) -> Option<&str> {
         .map(str::trim)
 }
 
+/// Lo único que puede hacer una cuenta con la contraseña inicial: ver quién es
+/// y cambiarla. Se usa la ruta original porque los routers anidados la recortan.
+fn allowed_before_password_change(parts: &Parts) -> bool {
+    let path = parts
+        .extensions
+        .get::<axum::extract::OriginalUri>()
+        .map(|u| u.0.path().to_string())
+        .unwrap_or_else(|| parts.uri.path().to_string());
+    matches!(path.as_str(), "/api/auth/me" | "/api/me" | "/api/me/password" | "/api/setup/status")
+}
+
 impl FromRequestParts<AppState> for CurrentUser {
     type Rejection = AppError;
 
@@ -107,8 +143,8 @@ impl FromRequestParts<AppState> for CurrentUser {
         let token = bearer(parts).ok_or(AppError::Unauthorized)?;
         let token_hash = hash_token(token);
         let now = Utc::now();
-        let row: Option<(i64, String, String, String, Option<i64>)> = sqlx::query_as(
-            "SELECT u.id, u.username, u.display_name, u.role, u.company_id
+        let row: Option<(i64, String, String, String, Option<i64>, bool)> = sqlx::query_as(
+            "SELECT u.id, u.username, u.display_name, u.role, u.company_id, u.must_change_password
              FROM sessions s JOIN users u ON u.id = s.user_id
              WHERE s.token_hash = ? AND s.expires_at > ? AND u.active = 1",
         )
@@ -116,7 +152,10 @@ impl FromRequestParts<AppState> for CurrentUser {
         .bind(now)
         .fetch_optional(&state.pool)
         .await?;
-        let (id, username, display_name, role, company_id) = row.ok_or(AppError::Unauthorized)?;
+        let (id, username, display_name, role, company_id, must_change) = row.ok_or(AppError::Unauthorized)?;
+        if must_change && !allowed_before_password_change(parts) {
+            return Err(AppError::PasswordChangeRequired);
+        }
         sqlx::query("UPDATE sessions SET last_used_at = ? WHERE token_hash = ?")
             .bind(now)
             .bind(&token_hash)

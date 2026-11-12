@@ -161,7 +161,7 @@ export async function view() {
       qrBtn,
       h('h2.section', 'O escribe tus datos'),
       form,
-      !isAndroid ? notice('Primera vez: el administrador entra con el usuario «Admin» y la contraseña «1234», y después la cambia.', 'info', 'key') : null,
+      !isAndroid ? notice('Primera vez: el administrador entra con el usuario «Admin» y la contraseña «1234» (o la de DECA_ADMIN_PASSWORD), y después la cambia.', 'info', 'key') : null,
     ],
     actions: [enter],
   });

@@ -48,7 +48,7 @@ pub struct Company {
 /// mostrar el asistente de configuración inicial (crear la empresa).
 async fn setup_status(State(state): State<AppState>, user: CurrentUser, headers: axum::http::HeaderMap) -> AppResult<Json<Value>> {
     let (companies,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM companies").fetch_one(&state.pool).await?;
-    let public = super::server::public_status(&state, &headers).await;
+    let public = super::server::public_status(&state, crate::public_url::AdminRequest::of(&user, &headers)).await;
     Ok(Json(json!({
         "necesita_empresa": companies == 0,
         "necesita_direccion_publica": public["url"].is_null(),

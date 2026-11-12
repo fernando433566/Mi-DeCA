@@ -139,6 +139,7 @@ fn read_varint(b: &[u8], pos: &mut usize) -> anyhow::Result<u64> {
     loop {
         let byte = *b.get(*pos).context("directorio PMTiles truncado")?;
         *pos += 1;
+        ensure!(shift < 63 || byte & 0xfe == 0, "varint desbordado");
         v |= ((byte & 0x7f) as u64) << shift;
         if byte & 0x80 == 0 {
             return Ok(v);
@@ -149,11 +150,14 @@ fn read_varint(b: &[u8], pos: &mut usize) -> anyhow::Result<u64> {
 }
 
 pub fn decompress(data: &[u8], compression: u8) -> anyhow::Result<Vec<u8>> {
+    const MAX_EXPANDED: usize = 32 * 1024 * 1024;
+    ensure!(data.len() <= MAX_EXPANDED, "bloque PMTiles demasiado grande");
     match compression {
         COMPRESSION_NONE => Ok(data.to_vec()),
         COMPRESSION_GZIP => {
             let mut out = Vec::new();
-            flate2::read::GzDecoder::new(data).read_to_end(&mut out)?;
+            flate2::read::GzDecoder::new(data).take(MAX_EXPANDED as u64 + 1).read_to_end(&mut out)?;
+            ensure!(out.len() <= MAX_EXPANDED, "bloque PMTiles descomprimido demasiado grande");
             Ok(out)
         }
         c => bail!("compresión interna no soportada ({c})"),
@@ -170,23 +174,23 @@ pub fn gzip(data: &[u8]) -> Vec<u8> {
 pub fn decode_directory(b: &[u8]) -> anyhow::Result<Vec<Entry>> {
     let mut pos = 0;
     let n = read_varint(b, &mut pos)? as usize;
-    ensure!(n <= 10_000_000, "directorio demasiado grande");
+    ensure!(n <= 1_000_000 && n <= b.len() / 4, "directorio demasiado grande o truncado");
     let mut entries = vec![Entry { tile_id: 0, offset: 0, length: 0, run_length: 0 }; n];
     let mut last = 0u64;
     for e in entries.iter_mut() {
-        last += read_varint(b, &mut pos)?;
+        last = last.checked_add(read_varint(b, &mut pos)?).context("id PMTiles desbordado")?;
         e.tile_id = last;
     }
     for e in entries.iter_mut() {
-        e.run_length = read_varint(b, &mut pos)? as u32;
+        e.run_length = u32::try_from(read_varint(b, &mut pos)?).context("run PMTiles fuera de rango")?;
     }
     for e in entries.iter_mut() {
-        e.length = read_varint(b, &mut pos)? as u32;
+        e.length = u32::try_from(read_varint(b, &mut pos)?).context("longitud PMTiles fuera de rango")?;
     }
     for i in 0..n {
         let v = read_varint(b, &mut pos)?;
         entries[i].offset = if v == 0 && i > 0 {
-            entries[i - 1].offset + entries[i - 1].length as u64
+            entries[i - 1].offset.checked_add(entries[i - 1].length as u64).context("offset PMTiles desbordado")?
         } else {
             v.checked_sub(1).context("desplazamiento no válido en directorio")?
         };
@@ -210,7 +214,7 @@ pub fn encode_directory(entries: &[Entry]) -> Vec<u8> {
         write_varint(&mut out, e.length as u64);
     }
     for (i, e) in entries.iter().enumerate() {
-        if i > 0 && e.offset == entries[i - 1].offset + entries[i - 1].length as u64 {
+        if i > 0 && Some(e.offset) == entries[i - 1].offset.checked_add(entries[i - 1].length as u64) {
             write_varint(&mut out, 0);
         } else {
             write_varint(&mut out, e.offset + 1);

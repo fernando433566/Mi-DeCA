@@ -35,18 +35,18 @@ pub fn router() -> Router<AppState> {
         .route("/public-url/check", post(check_public_url))
 }
 
-async fn get_settings(State(state): State<AppState>, AdminUser(_): AdminUser, headers: HeaderMap) -> AppResult<Json<Value>> {
+async fn get_settings(State(state): State<AppState>, AdminUser(admin): AdminUser, headers: HeaderMap) -> AppResult<Json<Value>> {
     let s = settings::load(&state.pool).await?;
     Ok(Json(json!({
         "ajustes": s,
         "direccion_publica_por_defecto": state.config.public_base_url,
-        "direccion_publica": public_status(&state, &headers).await,
+        "direccion_publica": public_status(&state, public_url::AdminRequest::of(&admin, &headers)).await,
     })))
 }
 
 /// Dirección pública en uso y resultado de la última comprobación HTTPS.
-pub async fn public_status(state: &AppState, headers: &HeaderMap) -> Value {
-    match public_url::resolve(state, Some(headers)).await {
+pub async fn public_status(state: &AppState, learn_from: Option<public_url::AdminRequest<'_>>) -> Value {
+    match public_url::resolve(state, learn_from).await {
         Ok(r) => json!({
             "url": r.url,
             "origen": r.origen,
@@ -59,8 +59,8 @@ pub async fn public_status(state: &AppState, headers: &HeaderMap) -> Value {
 }
 
 /// Ajustes -> Servidor -> Comprobar enlace público (fuerza una comprobación nueva).
-async fn check_public_url(State(state): State<AppState>, AdminUser(_): AdminUser, headers: HeaderMap) -> AppResult<Json<Value>> {
-    let r = public_url::resolve(&state, Some(&headers)).await?;
+async fn check_public_url(State(state): State<AppState>, AdminUser(admin): AdminUser, headers: HeaderMap) -> AppResult<Json<Value>> {
+    let r = public_url::resolve(&state, public_url::AdminRequest::of(&admin, &headers)).await?;
     let check = public_url::verify(&state, &r.url).await;
     Ok(Json(json!({ "url": r.url, "origen": r.origen, "comprobacion": check })))
 }

@@ -33,17 +33,19 @@ impl LoginLimiter {
     const WINDOW: Duration = Duration::from_secs(10 * 60);
 
     pub fn is_blocked(&self, key: &str) -> bool {
-        let map = self.attempts.lock().unwrap();
+        let mut map = self.attempts.lock().unwrap();
+        map.retain(|_, (_, time)| time.elapsed() < Self::WINDOW);
         matches!(map.get(&key.to_lowercase()), Some((n, t)) if *n >= Self::MAX_FAILS && t.elapsed() < Self::WINDOW)
     }
 
     pub fn fail(&self, key: &str) {
         let mut map = self.attempts.lock().unwrap();
+        map.retain(|_, (_, time)| time.elapsed() < Self::WINDOW);
         let entry = map.entry(key.to_lowercase()).or_insert((0, Instant::now()));
         if entry.1.elapsed() >= Self::WINDOW {
             *entry = (0, Instant::now());
         }
-        entry.0 += 1;
+        entry.0 = entry.0.saturating_add(1);
         entry.1 = Instant::now();
     }
 

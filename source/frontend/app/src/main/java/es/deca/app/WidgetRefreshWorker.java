@@ -32,12 +32,15 @@ public class WidgetRefreshWorker extends Worker {
     @Override
     public Result doWork() {
         Context c = getApplicationContext();
-        if (!Session.active(c)) return Result.success();
+        Session.Snapshot owner = Session.snapshot(c);
+        if (!owner.active()) return Result.success();
         try {
-            Http.Response r = Http.request("GET", Session.server(c) + "/api/decas/ultimo", Session.token(c), null);
+            Http.Response r = Http.request("GET", owner.server + "/api/decas/ultimo", owner.token, null);
             if (r.ok()) {
                 // Viajes del último DeCA; si es el mismo, se mantiene el viaje que se mostraba.
-                DecaWidget.saveKeepingIndex(c, new JSONArray(r.body.trim()).toString());
+                synchronized (Session.class) {
+                    if (Session.isCurrent(c, owner)) DecaWidget.saveKeepingIndex(c, new JSONArray(r.body.trim()).toString());
+                }
             }
         } catch (Exception ignored) {
             // Sin conexión: se mantiene lo último guardado.

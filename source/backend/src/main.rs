@@ -80,3 +80,6 @@ async fn shutdown() {
     tokio::select! { _ = ctrl_c => {}, _ = term => {} }
     tracing::info!("apagando el servidor");
 }
+
+#[cfg(test)]
+mod security_tests;

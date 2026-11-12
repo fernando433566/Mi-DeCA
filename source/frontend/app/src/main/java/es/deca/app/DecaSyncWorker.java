@@ -43,54 +43,60 @@ public class DecaSyncWorker extends Worker {
     @Override
     public Result doWork() {
         Context c = getApplicationContext();
-        if (!Session.active(c)) return Result.success();
-        String server = Session.server(c);
-        String token = Session.token(c);
+        Session.Snapshot owner = Session.snapshot(c);
+        if (!owner.active()) return Result.success();
+        String server = owner.server;
+        String token = owner.token;
         boolean retry = false;
-        JSONArray items = PendingQueue.all(c);
+        JSONArray items = PendingQueue.all(c, owner);
         for (int i = 0; i < items.length(); i++) {
+            if (!Session.isCurrent(c, owner)) break;
             JSONObject item = items.optJSONObject(i);
             String estado = item.optString("estado");
             if (!estado.equals("pendiente") && !estado.equals("enviando")) continue;
             try {
                 item.put("estado", "enviando");
                 item.put("intentos", item.optInt("intentos") + 1);
-                PendingQueue.update(c, item);
+                PendingQueue.update(c, item, owner);
                 Http.Response r = Http.request("POST", server + "/api/decas", token, item.getJSONObject("payload").toString());
                 if (r.ok()) {
                     JSONObject res = new JSONObject(r.body);
                     item.put("estado", "creado");
                     item.put("resultado", res);
-                    PendingQueue.update(c, item);
+                    PendingQueue.update(c, item, owner);
                     JSONArray decas = res.optJSONArray("decas");
-                    if (decas != null && decas.length() > 0) {
+                    synchronized (Session.class) {
+                    if (Session.isCurrent(c, owner) && decas != null && decas.length() > 0) {
                         // El widget empieza por el viaje 1.
                         DecaWidget.save(c, decas.toString(), 0);
                         Notifier.created(c, decas.getJSONObject(0), decas.length());
                     }
+                    }
                 } else if (r.status >= 500 || r.status == 408 || r.status == 429) {
                     item.put("estado", "pendiente");
-                    PendingQueue.update(c, item);
+                    PendingQueue.update(c, item, owner);
                     retry = true;
                 } else {
                     String msg = "Error " + r.status;
                     try { msg = new JSONObject(r.body).optString("error", msg); } catch (Exception ignored) { }
                     item.put("estado", "error");
                     item.put("error", msg);
-                    PendingQueue.update(c, item);
-                    Notifier.failed(c, msg);
+                    PendingQueue.update(c, item, owner);
+                    synchronized (Session.class) {
+                        if (Session.isCurrent(c, owner)) Notifier.failed(c, msg);
+                    }
                 }
             } catch (IOException e) {
                 // Sin conexión con el servidor: se vuelve a intentar.
                 try { item.put("estado", "pendiente"); } catch (Exception ignored) { }
-                PendingQueue.update(c, item);
+                PendingQueue.update(c, item, owner);
                 retry = true;
             } catch (Exception e) {
                 try {
                     item.put("estado", "error");
                     item.put("error", "Respuesta no válida del servidor");
                 } catch (Exception ignored) { }
-                PendingQueue.update(c, item);
+                PendingQueue.update(c, item, owner);
             }
         }
         MainActivity.notifyQueueChanged();

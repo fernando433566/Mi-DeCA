@@ -4,7 +4,7 @@
 //   aplicación está abierta, porque iOS no permite trabajar en segundo plano a una web.
 // Cada petición lleva `client_ref`: si se repite, el servidor no duplica el DeCA.
 
-import { api, cache, session } from './api.js';
+import { api, cache, session, sessionIdentity } from './api.js';
 import { isAndroid, native } from './native.js';
 import { isInstalled } from './platform.js';
 import { uuid } from './format.js';
@@ -42,12 +42,15 @@ let running = false;
 /** Intenta enviar los DeCA pendientes. Se detiene al primer fallo de conexión. */
 export async function flush() {
   if (isAndroid || running || !session.get()) return;
+  const owner = sessionIdentity();
+  const sameOwner = () => sessionIdentity() === owner;
   const todo = load().filter((p) => p.estado === 'pendiente');
   if (!todo.length) return;
   running = true;
   let touched = false;
   try {
     for (const item of todo) {
+      if (!sameOwner()) break;
       const update = (patch) => save(load().map((p) => (p.id === item.id ? { ...p, ...patch } : p)));
       try {
         update({ intentos: item.intentos + 1 });
@@ -57,6 +60,7 @@ export async function flush() {
         const first = res.decas[0];
         toast(res.decas.length > 1 ? `${res.decas.length} DeCA creados al volver la conexión` : `DeCA ${first.numero} creado al volver la conexión`, 'ok');
       } catch (e) {
+        if (!sameOwner() || e.code === 'session_changed') break;
         // Sin conexión, servidor caído o sesión caducada: se reintenta más tarde.
         if (e.offline || e.status >= 500 || [401, 408, 429].includes(e.status)) break;
         update({ estado: 'error', error: e.message });

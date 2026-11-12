@@ -29,6 +29,8 @@ public final class Http {
     /** Lanza IOException si no hay conexión con el servidor. */
     public static Response request(String method, String url, String token, String jsonBody) throws IOException {
         HttpURLConnection con = (HttpURLConnection) new URL(url).openConnection();
+        try {
+        con.setInstanceFollowRedirects(false);
         con.setConnectTimeout(15000);
         con.setReadTimeout(60000);
         con.setRequestMethod(method);
@@ -49,11 +51,14 @@ public final class Http {
                 ByteArrayOutputStream out = new ByteArrayOutputStream();
                 byte[] buf = new byte[8192];
                 int n;
-                while ((n = is.read(buf)) > 0) out.write(buf, 0, n);
+                while ((n = is.read(buf)) > 0) {
+                    if (out.size() + n > 16 * 1024 * 1024) throw new IOException("Respuesta demasiado grande");
+                    out.write(buf, 0, n);
+                }
                 body = out.toString("UTF-8");
             }
         }
-        con.disconnect();
         return new Response(status, body);
+        } finally { con.disconnect(); }
     }
 }

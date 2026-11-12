@@ -21,3 +21,6 @@ target/
 
 # Entornos
 .env
+
+# Local security audit evidence
+/Security audit/

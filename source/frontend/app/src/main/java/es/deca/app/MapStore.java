@@ -76,7 +76,11 @@ public final class MapStore {
     }
 
     private static File file(Context c, JSONObject item) {
-        return new File(dir(c), item.optString("id") + "-" + item.optString("version") + ".pmtiles");
+        String id = item.optString("id"), version = item.optString("version");
+        if (!id.matches("[A-Za-z0-9_-]{1,80}") || !version.matches("[0-9]{8}")) {
+            throw new IllegalArgumentException("Identificador de mapa no válido");
+        }
+        return new File(dir(c), id + "-" + version + ".pmtiles");
     }
 
     /** Empieza a descargar una región (JSON del catálogo del servidor). */
@@ -97,8 +101,11 @@ public final class MapStore {
             File dest = file(c, item);
             //noinspection ResultOfMethodCallIgnored
             dest.delete();
-            DownloadManager.Request req = new DownloadManager.Request(Uri.parse(Session.server(c) + region.getString("url")))
-                    .addRequestHeader("Authorization", "Bearer " + Session.token(c))
+            Session.Snapshot owner = Session.snapshot(c);
+            if (!owner.active()) throw new IllegalStateException("Inicia sesión para descargar mapas");
+            String destination = ServerUrl.authenticated(owner.server, owner.server + region.getString("url"));
+            DownloadManager.Request req = new DownloadManager.Request(Uri.parse(destination))
+                    .addRequestHeader("Authorization", "Bearer " + owner.token)
                     .setTitle("Mapa de " + region.optString("nombre"))
                     .setDescription("DeCA · mapa sin conexión")
                     .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE)
@@ -219,6 +226,7 @@ public final class MapStore {
 
     /** Lee `length` bytes desde `offset` de un mapa descargado (Base64). */
     public static String read(Context c, String id, long offset, int length) {
+        if (offset < 0 || length < 0 || length > 4 * 1024 * 1024) return null;
         JSONObject it;
         synchronized (LOCK) {
             it = find(load(c), id);

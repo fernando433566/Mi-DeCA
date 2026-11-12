@@ -132,12 +132,7 @@ async fn update(State(state): State<AppState>, AdminUser(admin): AdminUser, Path
     }
     if let Some(p) = req.contrasena.as_deref().filter(|s| !s.is_empty()) {
         password::validate_new(p).map_err(AppError::BadRequest)?;
-        sqlx::query("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?")
-            .bind(password::hash(p)?).bind(now).bind(id)
-            .execute(&state.pool)
-            .await?;
-        // Cierra las sesiones abiertas con la contraseña anterior.
-        auth::delete_user_sessions(&state.pool, id).await?;
+        auth::update_password(&state.pool, id, &password::hash(p)?, None, None).await?;
     }
     if let Some(cid) = req.empresa_id {
         sqlx::query("UPDATE users SET company_id = ?, updated_at = ? WHERE id = ?")
@@ -213,7 +208,7 @@ async fn qr_login(
 ) -> AppResult<Json<Value>> {
     let w = fetch(&state, id).await?;
     // Preferentemente la dirección pública; si aún no se conoce, la que usa el admin ahora mismo.
-    let server = match public_url::resolve(&state, Some(&headers)).await {
+    let server = match public_url::resolve(&state, public_url::AdminRequest::of(&admin, &headers)).await {
         Ok(r) => r.url,
         Err(e) => public_url::request_base(&headers).ok_or(e)?,
     };

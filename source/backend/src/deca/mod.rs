@@ -162,7 +162,8 @@ pub async fn create(
         let datos_json = serde_json::to_string(&trip)?;
         let now = Utc::now();
         let token = random_token();
-        let loc = storage::new_location(&deca_dir, &user.display_name, &datos.matricula_camion, now);
+        let reserved = storage::reserve_location(&deca_dir, &user.display_name, &datos.matricula_camion, now)?;
+        let loc = &reserved.location;
         let url_path = loc.url_path(&token);
         let public_url = format!("{base}{url_path}");
         let expires = expiry(&datos, now, cfg.public_link_days);
@@ -216,11 +217,11 @@ pub async fn create(
         storage::write_atomic(&path, &bytes).await?;
         verify_file(&path).await?;
 
-        if let Err(e) = tx.commit().await {
-            let _ = tokio::fs::remove_file(&path).await;
-            return Err(e.into());
-        }
-        db::audit(&state.pool, Some(user.id), "deca_creado", Some(id), format!("{numero} · {}", loc.rel_path())).await;
+        // Si falla, al salir se borra el fichero reservado (ver `storage::Reserved`).
+        tx.commit().await?;
+        let rel_path = loc.rel_path();
+        reserved.keep();
+        db::audit(&state.pool, Some(user.id), "deca_creado", Some(id), format!("{numero} · {rel_path}")).await;
         created.push(get_row(state, id).await?);
     }
     Ok(created)

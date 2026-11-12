@@ -14,6 +14,12 @@ services:
     image: ${DECA_IMAGE:-ghcr.io/fernando433566/deca-server:latest}
     container_name: deca-server
     restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid,nodev
     platform: linux/amd64
 
     # Puerto: <dirección de escucha>:<puerto fuera del contenedor>:<puerto dentro del contenedor>
@@ -26,8 +32,10 @@ services:
     environment:
       # Enlace HTTPS público (el de Cloudflare Tunnel) que irá dentro de los QR.
       # Opcional: si se deja vacío, el servidor lo detecta y lo comprueba solo la primera
-      # vez que alguien entra por el túnel.
+      # vez que un administrador entra por el túnel.
       DECA_PUBLIC_URL: ${DECA_PUBLIC_URL:-}
+      # Opcional, solo en el primer arranque: contraseña inicial de Admin (vacío = 1234).
+      DECA_ADMIN_PASSWORD: ${DECA_ADMIN_PASSWORD:-}
       TZ: Europe/Madrid
       RUST_LOG: ${RUST_LOG:-info,sqlx=warn}
 

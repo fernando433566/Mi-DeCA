@@ -1,6 +1,6 @@
 [package]
 name = "deca-server"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 description = "Servidor para generar Documentos electrónicos de Control Administrativo (DeCA)"
 

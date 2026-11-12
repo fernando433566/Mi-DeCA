@@ -1,19 +1,15 @@
 //! Dirección pública del servidor (la que va dentro del QR de cada DeCA).
 //!
-//! Cloudflare Tunnel recibe las peticiones por `https://` y las reenvía en `http://`
-//! al puerto 8134 del contenedor, añadiendo las cabeceras `X-Forwarded-Proto: https`,
-//! `Cf-Visitor: {"scheme":"https"}` y `Host` con el dominio público. Con ellas:
+//! Prioridad: dirección escrita en Ajustes -> Servidor > `DECA_PUBLIC_URL` >
+//! dirección detectada por Cloudflare Tunnel.
 //!
-//! 1. **Detección**: la primera vez que alguien usa la app a través del túnel, el
-//!    servidor aprende su dirección pública sin configurar nada.
-//! 2. **Confirmación**: el servidor se llama a sí mismo a través de esa dirección
-//!    (`GET https://<dominio>/verificacion/<código aleatorio>`). Si la respuesta trae el
-//!    mismo código, queda confirmado que el enlace llega a ESTE servidor por HTTPS
-//!    (el cliente usa rustls, que solo admite TLS 1.2 o superior).
-//!
-//! Solo se impide emitir un DeCA cuando se sabe con certeza que el enlace no sería
-//! HTTPS. Si la comprobación no se puede hacer (por ejemplo, sin Internet), se emite
-//! igualmente con un aviso.
+//! Cloudflare Tunnel reenvía las peticiones `https://` al puerto 8134 con las cabeceras
+//! `X-Forwarded-Proto: https`, `Cf-Visitor` y el `Host` público. Si no hay dirección
+//! configurada, el servidor la aprende de ellas, pero **solo de peticiones de un
+//! administrador** ([`AdminRequest`]): esas cabeceras las puede escribir cualquier
+//! cliente, y un trabajador no debe poder cambiar el enlace que llevan los QR de todos.
+//! Antes de guardarla se comprueba de ida y vuelta (`/verificacion/<código>`), lo que
+//! confirma que el enlace funciona por HTTPS (diagnóstico de conectividad).
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
@@ -64,8 +60,18 @@ pub enum Origen {
     Manual,
     /// Variable de entorno `DECA_PUBLIC_URL`
     Entorno,
-    /// Aprendida de las peticiones que llegan por Cloudflare Tunnel
+    /// Aprendida de una petición de administrador llegada por Cloudflare Tunnel
     Detectada,
+}
+
+/// Cabeceras de una petición hecha por un administrador: las únicas de las que
+/// el servidor puede aprender su dirección pública.
+pub struct AdminRequest<'a>(&'a HeaderMap);
+
+impl<'a> AdminRequest<'a> {
+    pub fn of(user: &crate::auth::CurrentUser, headers: &'a HeaderMap) -> Option<Self> {
+        user.is_admin().then_some(Self(headers))
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -122,17 +128,30 @@ pub async fn verify(state: &AppState, url: &str) -> CheckStatus {
     } else {
         let nonce = random_token();
         state.public_url.pending.lock().unwrap().insert(nonce.clone());
-        let res = state
-            .http
-            .get(format!("{url}/verificacion/{nonce}"))
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(Duration::from_secs(15)).build();
+        let res = match client {
+            Ok(client) => client.get(format!("{url}/verificacion/{nonce}"))
             .timeout(Duration::from_secs(15))
-            .send()
-            .await;
+            .send().await,
+            Err(e) => Err(e),
+        };
         state.public_url.pending.lock().unwrap().remove(&nonce);
         match res {
-            Ok(r) if r.status().is_success() => match r.text().await {
-                Ok(body) if body.trim() == nonce => status(true, "El enlace llega a este servidor por HTTPS".into()),
-                _ => status(false, "la dirección responde, pero no es este servidor".into()),
+            Ok(mut r) if r.status().is_success() => {
+                let mut body = Vec::new();
+                let mut valid = true;
+                loop {
+                    match r.chunk().await {
+                        Ok(Some(chunk)) if body.len() + chunk.len() <= 128 => body.extend_from_slice(&chunk),
+                        Ok(None) => break,
+                        _ => { valid = false; break; }
+                    }
+                }
+                if valid && body == nonce.as_bytes() {
+                    status(true, "El enlace responde al diagnóstico HTTPS".into())
+                } else { status(false, "la dirección no responde al diagnóstico esperado".into()) }
             },
             Ok(r) => status(false, format!("la dirección respondió con el código {}", r.status().as_u16())),
             Err(e) => {
@@ -141,7 +160,9 @@ pub async fn verify(state: &AppState, url: &str) -> CheckStatus {
             }
         }
     };
-    state.public_url.results.lock().unwrap().insert(url.to_string(), result.clone());
+    let mut results = state.public_url.results.lock().unwrap();
+    if results.len() >= 16 && !results.contains_key(url) { results.clear(); }
+    results.insert(url.to_string(), result.clone());
     result
 }
 
@@ -157,43 +178,43 @@ fn clean(url: &str) -> String {
     url.trim().trim_end_matches('/').to_string()
 }
 
+/// Aprende una dirección nueva de la petición de un administrador, si se confirma.
+async fn learn(state: &AppState, mut s: settings::ServerSettings, from: Option<AdminRequest<'_>>) -> AppResult<Option<Resolved>> {
+    let Some(candidate) = from.and_then(|r| https_from_headers(r.0)) else { return Ok(None) };
+    if s.public_base_url_detectada.as_deref() == Some(candidate.as_str()) || !verified(state, &candidate).await.ok {
+        return Ok(None);
+    }
+    s.public_base_url_detectada = Some(candidate.clone());
+    settings::save(&state.pool, &s).await?;
+    tracing::info!("dirección pública detectada y confirmada: {candidate}");
+    Ok(Some(Resolved { url: candidate, origen: Origen::Detectada, verificada: true, aviso: None }))
+}
+
 /// Calcula la dirección pública que se usará en los QR.
 ///
-/// Prioridad: manual > variable de entorno > detectada por el túnel (confirmada)
-/// > última detectada guardada > detectada sin confirmar (con aviso).
-pub async fn resolve(state: &AppState, headers: Option<&HeaderMap>) -> AppResult<Resolved> {
-    let mut s = settings::load(&state.pool).await?;
+/// Prioridad: manual > variable de entorno > detectada (confirmada) > última detectada guardada.
+/// `learn_from` solo existe en peticiones de administrador (ver [`AdminRequest`]).
+pub async fn resolve(state: &AppState, learn_from: Option<AdminRequest<'_>>) -> AppResult<Resolved> {
+    let s = settings::load(&state.pool).await?;
     let configured = s
         .public_base_url
-        .clone()
-        .map(|u| (clean(&u), Origen::Manual))
+        .as_deref()
+        .map(|u| (clean(u), Origen::Manual))
         .or_else(|| state.config.public_base_url.as_deref().map(|u| (clean(u), Origen::Entorno)));
-
     let (url, origen) = match configured {
         Some(c) => c,
         None => {
-            let from_request = headers.and_then(https_from_headers);
             let stored = s.public_base_url_detectada.clone();
-            if let Some(candidate) = from_request.filter(|c| Some(c) != stored.as_ref()) {
-                if verified(state, &candidate).await.ok {
-                    // Dirección nueva confirmada: se guarda para las próximas veces.
-                    s.public_base_url_detectada = Some(candidate.clone());
-                    settings::save(&state.pool, &s).await?;
-                    tracing::info!("dirección pública detectada y confirmada: {candidate}");
-                    return Ok(Resolved { url: candidate, origen: Origen::Detectada, verificada: true, aviso: None });
-                }
-                match stored {
-                    Some(st) => (st, Origen::Detectada),
-                    None => (candidate, Origen::Detectada),
-                }
-            } else if let Some(st) = stored {
-                (st, Origen::Detectada)
-            } else {
-                return Err(AppError::bad(
-                    "Todavía no se conoce la dirección pública del servidor. Entra una vez en la app usando la \
-                     dirección de Cloudflare Tunnel (https://...) o escríbela en Ajustes -> Servidor.",
-                ));
+            if let Some(found) = learn(state, s, learn_from).await? {
+                return Ok(found);
             }
+            let stored = stored.ok_or_else(|| {
+                AppError::bad(
+                    "Todavía no se conoce la dirección pública del servidor. El administrador debe entrar una vez \
+                     usando la dirección de Cloudflare Tunnel (https://...) o escribirla en Ajustes -> Servidor.",
+                )
+            })?;
+            (stored, Origen::Detectada)
         }
     };
 

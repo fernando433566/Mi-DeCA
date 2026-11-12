@@ -5,7 +5,7 @@ Orden FOM/2861/2012 (art. 6) y la Resolución de la DGTCF de 5 de junio de 2026 
 y que sirve en el **puerto 8134** la aplicación web (carpeta `web/`). Todo va en una imagen Docker x86_64.
 
 - Base de datos SQLite + PDF en disco, todo dentro de `/data`.
-- En el primer arranque se crea la cuenta **`Admin` / `1234`**; la aplicación obliga a cambiar la contraseña.
+- En el primer arranque se crea la cuenta **`Admin` / `1234`** (o con la contraseña de `DECA_ADMIN_PASSWORD` / `DECA_ADMIN_PASSWORD_FILE`, 12+ caracteres). Mientras conserve `1234`, el servidor solo le deja cambiarla (`must_change_password`, `src/auth/mod.rs`).
 - Cloudflare Tunnel va aparte y apunta a `http://<host>:8134`.
 
 La app Android está en [`../frontend`](../frontend) y usa esta misma web.
@@ -30,7 +30,8 @@ Para desplegar con Docker Compose, ver [`../../git`](../../git).
 | `DECA_PORT`               | `8134`      | Puerto HTTP |
 | `DECA_DATA_DIR`           | `./data` (`/data` en Docker) | BD, PDF, mapas |
 | `DECA_WEB_DIR`            | `./web` (`/app/web` en Docker) | Carpeta de la aplicación web |
-| `DECA_PUBLIC_URL`         | —           | URL pública HTTPS. Opcional: se detecta sola a través de Cloudflare Tunnel |
+| `DECA_PUBLIC_URL`         | —           | URL pública HTTPS. Opcional: se detecta sola cuando un administrador entra por Cloudflare Tunnel |
+| `DECA_ADMIN_PASSWORD`     | —           | Opcional, primer arranque: contraseña inicial de `Admin` en vez de `1234` (también `DECA_ADMIN_PASSWORD_FILE`) |
 | `DECA_ALLOW_INSECURE_URL` | `false`     | Solo para pruebas locales: acepta `http://` |
 
 ## Viajes de ida y vuelta
@@ -75,10 +76,11 @@ Probado con WebKit 27.2 emulando un iPhone 15 Pro en modo instalado. Falta proba
 No hace falta configurar nada. Cloudflare Tunnel recibe las peticiones por `https://` y las reenvía
 al puerto 8134 añadiendo `X-Forwarded-Proto: https`, `Cf-Visitor` y el `Host` público (`src/public_url.rs`):
 
-1. **Detección:** la primera vez que alguien usa la app por la dirección del túnel, el servidor aprende esa dirección.
-2. **Confirmación:** el servidor se llama a sí mismo a través de ella (`GET https://<dominio>/verificacion/<código aleatorio>`).
-   Si recibe el mismo código, está confirmado que el enlace llega a este contenedor por HTTPS con TLS 1.2 o superior
-   (el cliente usa rustls). Solo entonces se guarda la dirección. Se vuelve a comprobar cada 30 minutos.
+1. **Detección:** la primera vez que **un administrador** usa la app por la dirección del túnel, el servidor aprende esa dirección.
+   Las peticiones de los trabajadores nunca la cambian: cualquiera puede escribir esas cabeceras.
+2. **Confirmación:** el servidor se llama a sí mismo a través de ella (`GET https://<dominio>/verificacion/<código aleatorio>`),
+   sin seguir redirecciones y leyendo como mucho 128 bytes. Solo si recibe el mismo código se guarda la dirección.
+   Se vuelve a comprobar cada 30 minutos.
 3. **Limitación:** solo se impide emitir cuando se sabe con certeza que el enlace no sería HTTPS (dirección `http://`)
    o cuando aún no se conoce ninguna dirección. Si la comprobación no se puede hacer (por ejemplo, sin Internet),
    el DeCA se emite con `aviso` y `enlace_verificado: false`.

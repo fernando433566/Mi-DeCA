@@ -30,7 +30,7 @@ public class DecaBridge {
         Session.save(ctx, json);
         if (Session.active(ctx)) {
             WidgetRefreshWorker.schedule(ctx);
-            if (PendingQueue.hasWork(ctx)) DecaSyncWorker.schedule(ctx, false);
+            if (PendingQueue.hasWork(ctx)) DecaSyncWorker.schedule(ctx, true);
         }
     }
 
@@ -121,8 +121,13 @@ public class DecaBridge {
     @JavascriptInterface
     public void download(String url, String fileName, String mime) {
         try {
-            DownloadManager.Request req = new DownloadManager.Request(Uri.parse(url))
-                    .addRequestHeader("Authorization", "Bearer " + Session.token(ctx))
+            Session.Snapshot owner = Session.snapshot(ctx);
+            if (!owner.active() || fileName == null || fileName.contains("/") || fileName.contains("\\")) {
+                throw new IllegalArgumentException("Nombre de descarga no válido");
+            }
+            String destination = ServerUrl.authenticated(owner.server, url);
+            DownloadManager.Request req = new DownloadManager.Request(Uri.parse(destination))
+                    .addRequestHeader("Authorization", "Bearer " + owner.token)
                     .setTitle(fileName)
                     .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                     .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName);

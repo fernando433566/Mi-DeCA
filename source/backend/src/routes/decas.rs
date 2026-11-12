@@ -96,7 +96,7 @@ async fn create(
         }
     }
     let company = company_for(&state, &user, req.empresa_id).await?;
-    let public = public_url::resolve(&state, Some(&headers)).await?;
+    let public = public_url::resolve(&state, public_url::AdminRequest::of(&user, &headers)).await?;
     let rows = deca::create(&state, &user, company, req.datos, req.numero_viajes, &public.url, req.client_ref.as_deref()).await?;
     if let Some(first) = rows.first() {
         // Añade a la base de datos compartida los camiones, CIF, direcciones... nuevos.
@@ -137,8 +137,9 @@ async fn latest_group(state: &AppState, user: &CurrentUser) -> AppResult<Vec<Dec
     .fetch_optional(&state.pool)
     .await?;
     let Some(last) = last else { return Ok(Vec::new()) };
-    Ok(sqlx::query_as("SELECT * FROM decas WHERE grupo_id = ? ORDER BY viaje_num")
+    Ok(sqlx::query_as("SELECT * FROM decas WHERE grupo_id = ? AND user_id = ? ORDER BY viaje_num")
         .bind(&last.grupo_id)
+        .bind(last.user_id)
         .fetch_all(&state.pool)
         .await?)
 }
@@ -172,8 +173,9 @@ async fn detail(State(state): State<AppState>, user: CurrentUser, Path(id): Path
     let row = load(&state, &user, id).await?;
     let versions = deca::versions(&state, id).await?;
     // Los demás viajes del mismo grupo (ida y vuelta), para pasar de uno a otro.
-    let viajes: Vec<(i64, i64, String)> = sqlx::query_as("SELECT id, viaje_num, numero FROM decas WHERE grupo_id = ? ORDER BY viaje_num")
+    let viajes: Vec<(i64, i64, String)> = sqlx::query_as("SELECT id, viaje_num, numero FROM decas WHERE grupo_id = ? AND user_id = ? ORDER BY viaje_num")
         .bind(&row.grupo_id)
+        .bind(row.user_id)
         .fetch_all(&state.pool)
         .await?;
     let viajes: Vec<Value> = viajes.into_iter().map(|(id, n, numero)| json!({ "id": id, "viaje_num": n, "numero": numero })).collect();

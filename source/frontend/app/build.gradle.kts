@@ -20,8 +20,8 @@ android {
         applicationId = "es.deca.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 5
-        versionName = "0.3.0"
+        versionCode = 6
+        versionName = "0.3.1"
     }
 
     // La interfaz es la misma aplicación web que sirve el servidor (source/backend/web):

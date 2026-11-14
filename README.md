@@ -90,10 +90,14 @@ Los navegadores solo permiten instalar la aplicación, usarla sin conexión y le
 
 Por defecto, las cuentas nuevas son de trabajador. Un administrador puede escalarlas en Ajustes → empresa → Trabajadores → Trabajadores en mi empresa → perfil → casilla **Administrador**. Nadie puede cambiarse su propio permiso, y la casilla no aparece a los trabajadores.
 
+## Cambios de la versión 0.3.1
+
+- El billete de «DeCA más reciente» también sigue la preferencia visual «Mostrar PDF directamente al seleccionar un DeCA».
+
 ## Cambios de la versión 0.3.0
 
 - Se elimina la emisión de varios viajes de ida y vuelta: cada emisión crea un DeCA. Los ya emitidos así siguen existiendo, cada uno por separado.
-- «Últimos 7 Días» muestra billetes reducidos con un QR pequeño. Al pulsar uno se abre la página del DeCA o, si está activada la preferencia visual «Mostrar PDF directamente al seleccionar un DeCA», su PDF.
+- «Últimos 7 Días» muestra billetes reducidos con un QR pequeño. Al pulsar uno (y también el billete de «DeCA más reciente») se abre la página del DeCA o, si está activada la preferencia visual «Mostrar PDF directamente al seleccionar un DeCA», su PDF.
 - Nuevo apartado «Preferencias visuales» en las preferencias de cada usuario. El administrador puede fijar cada ajuste como activado o desactivado por defecto para la empresa o para un trabajador; entonces el trabajador no puede cambiarlo.
 - Actualizaciones de la app Android: en Ajustes → Servidor → «Actualizaciones de la app Android» el administrador decide si la app busca e instala sola las versiones nuevas (al abrirse y cada 12 h) para él y todos sus trabajadores, y de dónde: por defecto las releases de https://github.com/fernando433566/Mi-DeCA/releases, o la dirección que ponga (releases de GitHub o Gitea/Forgejo/Codeberg, o un JSON `{"version", "apk", "sha256"}`), como Obtainium. Cualquiera puede buscar a mano en Ajustes → «Versión de la app». La release debe incluir la APK; Android solo la instala si está firmada con la misma clave. La primera vez, Android pide permitir que DeCA instale aplicaciones; a partir de la segunda actualización suele instalarse sin preguntar.
 - Android: los PDF se descargan en los datos de la app (no en «Descargas»), se abren al terminar de descargarse y, si ya están descargados, se abren directamente («Abrir PDF»), también sin conexión. Se borran del móvil cuando el DeCA sale de «Últimos 7 Días». En el navegador y en iPhone el PDF se abre en una pestaña nueva.

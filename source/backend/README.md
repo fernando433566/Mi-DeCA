@@ -208,7 +208,7 @@ Prioridad: admin→trabajador > empresa > propias del trabajador > automáticas 
 
 | Campo | Qué hace |
 |---|---|
-| `pdf_directo` | «Mostrar PDF directamente al seleccionar un DeCA»: al pulsar un billete de «Últimos 7 Días» se abre su PDF en vez de la página del DeCA |
+| `pdf_directo` | «Mostrar PDF directamente al seleccionar un DeCA»: al pulsar un billete de «Últimos 7 Días» o el de «DeCA más reciente» se abre su PDF en vez de la página del DeCA |
 
 Si el administrador la fija (empresa o trabajador) como activada o desactivada, el trabajador no puede cambiarla;
 si no, cada usuario elige (por defecto, desactivada). El valor efectivo llega en `preferencias_visuales` de `/api/auth/me`.

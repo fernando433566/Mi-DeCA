@@ -9,6 +9,7 @@ import { isAndroid, native } from '../core/native.js';
 import { state, isAdmin, setNet } from '../core/state.js';
 import { pendingTicket, ticket } from '../components/ticket.js';
 import { showOnWidget } from '../components/latest.js';
+import { selectDeca } from '../core/pdf.js';
 import { fechaHora } from '../core/format.js';
 import * as catalog from '../components/catalog.js';
 import { pending, removePending, retry as retryQueue, queueAvailable, sendsInBackground } from '../core/queue.js';
@@ -74,7 +75,7 @@ export async function view() {
     const last = list[0];
     latestBox.replaceChildren(
       last
-        ? ticket(last, { showUser: isAdmin(), onClick: () => go(`/deca/${last.id}`) })
+        ? ticket(last, { showUser: isAdmin(), onClick: () => selectDeca(last) })
         : panel(h('p.muted.center', 'Todavía no hay ningún DeCA. Pulsa «CREAR DeCA» para hacer el primero.')),
     );
     if (!list.__offline) showOnWidget(last);

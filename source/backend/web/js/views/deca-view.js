@@ -2,14 +2,14 @@
 
 import { h, icon } from '../core/dom.js';
 import { api, cache, cachedGet } from '../core/api.js';
-import { page, sign, section, notice, loading, errorView, panel, listItem, modal, toast } from '../core/ui.js';
+import { page, sign, section, notice, loading, errorView, panel, listItem, modal } from '../core/ui.js';
 import { go, onLeave } from '../core/router.js';
 import { native } from '../core/native.js';
 import { isAdmin, setNet, state } from '../core/state.js';
 import { qrNode } from '../core/qr.js';
 import { ticket, miniTicket } from '../components/ticket.js';
 import { fecha, fechaHora, kg, num, diaCorto } from '../core/format.js';
-import { openPdf, isPdfSaved, pdfButtonText } from '../core/pdf.js';
+import { showPdf, pdfButtonText, pdfDirect, selectDeca } from '../core/pdf.js';
 
 /** QR a pantalla completa con brillo máximo (para el agente en un control). */
 export function showQrFullscreen(d) {
@@ -122,14 +122,6 @@ export async function view({ id }) {
   page({ title: d.numero, back: '/', body, actions: [qrBtn] });
 }
 
-/** Abre el PDF avisando mientras se descarga y mostrando los errores. */
-function showPdf(d, version = d.version) {
-  const downloading = !isPdfSaved(d, version);
-  const opening = openPdf(d, version);
-  if (downloading) toast('Descargando el PDF…');
-  return opening.catch((e) => toast(e.message, 'danger'));
-}
-
 export async function recentView() {
   page({ title: 'Últimos 7 Días', back: '/', body: loading() });
   try {
@@ -146,9 +138,7 @@ export async function recentView() {
         day = dd;
         body.push(section(dd));
       }
-      // «Mostrar PDF directamente al seleccionar un DeCA» (Ajustes → Preferencias visuales).
-      const direct = !!state.user?.preferencias_visuales?.pdf_directo;
-      body.push(miniTicket(d, { onClick: () => (direct ? showPdf(d) : go(`/deca/${d.id}`)), action: direct ? 'Abrir PDF' : 'Ver DeCA', showUser: isAdmin() }));
+      body.push(miniTicket(d, { onClick: () => selectDeca(d), action: pdfDirect() ? 'Abrir PDF' : 'Ver DeCA', showUser: isAdmin() }));
     }
     page({
       title: 'Últimos 7 Días',

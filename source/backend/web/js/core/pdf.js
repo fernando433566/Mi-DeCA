@@ -7,6 +7,9 @@
 
 import { api } from './api.js';
 import { isAndroid, native } from './native.js';
+import { toast } from './ui.js';
+import { go } from './router.js';
+import { state } from './state.js';
 
 /** Nombre del PDF (el mismo que tiene en el servidor). Las versiones anteriores llevan `-vN`. */
 export function pdfName(d, version = d.version) {
@@ -57,4 +60,25 @@ export async function openPdf(d, version = d.version) {
     tab?.close();
     throw e;
   }
+}
+
+/** Abre el PDF avisando mientras se descarga y mostrando los errores. */
+export function showPdf(d, version = d.version) {
+  const downloading = !isPdfSaved(d, version);
+  const opening = openPdf(d, version);
+  if (downloading) toast('Descargando el PDF…');
+  return opening.catch((e) => toast(e.message, 'danger'));
+}
+
+/** «Mostrar PDF directamente al seleccionar un DeCA» (Ajustes → Preferencias → Preferencias visuales). */
+export function pdfDirect() {
+  return !!state.user?.preferencias_visuales?.pdf_directo;
+}
+
+/**
+ * Al pulsar un billete («DeCA más reciente» y «Últimos 7 Días»): según la preferencia,
+ * su PDF o la página del DeCA.
+ */
+export function selectDeca(d) {
+  return pdfDirect() ? showPdf(d) : go(`/deca/${d.id}`);
 }

@@ -1,7 +1,8 @@
 //! Ubicación de los PDF en disco y construcción de la URL pública.
 //!
-//! Estructura: `DeCA/Año/Mes/Día/NombreTrabajador-MatriculaDelCamion-Dia-Mes-Año-Hora-Minuto-Segundo.pdf`
-//! URL pública: `<base>/deca/Año/Mes/Día/<token>/<nombre del fichero>.pdf`
+//! Estructura: `DeCA/MatriculaDelCamion/Año/Mes/Día/NombreTrabajador-MatriculaDelCamion-Dia-Mes-Año-Hora-Minuto-Segundo.pdf`
+//! URL pública: `<base>/deca/Año/Mes/Día/<token>/<nombre del fichero>.pdf` (sin la matrícula,
+//! para que los QR emitidos antes del cambio de carpetas sigan funcionando).
 
 use std::path::{Path, PathBuf};
 
@@ -40,19 +41,27 @@ pub fn sanitize(s: &str) -> String {
 
 /// Ruta relativa (dentro de la carpeta `DeCA/`) y nombre del fichero.
 pub struct Location {
+    /// Carpeta de la matrícula del camión (ya saneada)
+    pub plate_dir: String,
     /// `Año/Mes/Día`
-    pub rel_dir: String,
+    pub date_dir: String,
     pub file_name: String,
 }
 
 impl Location {
+    /// `Matricula/Año/Mes/Día/fichero.pdf`
     pub fn rel_path(&self) -> String {
-        format!("{}/{}", self.rel_dir, self.file_name)
+        format!("{}/{}/{}", self.plate_dir, self.date_dir, self.file_name)
     }
 
     pub fn url_path(&self, token: &str) -> String {
-        format!("/deca/{}/{}/{}", self.rel_dir, token, self.file_name)
+        format!("/deca/{}/{}/{}", self.date_dir, token, self.file_name)
     }
+}
+
+/// Nombre de la carpeta (y del fragmento del fichero) de una matrícula.
+pub fn plate_dir(plate: &str) -> String {
+    sanitize(if plate.trim().is_empty() { "SinMatricula" } else { plate })
 }
 
 /// Nombre libre **reservado** en disco: se crea el fichero vacío de forma exclusiva
@@ -83,20 +92,16 @@ impl Drop for Reserved {
 
 pub fn reserve_location(deca_dir: &Path, worker: &str, plate: &str, at: DateTime<Utc>) -> std::io::Result<Reserved> {
     let t = at.with_timezone(&Madrid);
-    let rel_dir = t.format("%Y/%m/%d").to_string();
-    let base = format!(
-        "{}-{}-{}",
-        sanitize(worker),
-        sanitize(if plate.is_empty() { "SinMatricula" } else { plate }),
-        t.format("%d-%m-%Y-%H-%M-%S")
-    );
-    let dir = deca_dir.join(&rel_dir);
+    let plate_dir = plate_dir(plate);
+    let date_dir = t.format("%Y/%m/%d").to_string();
+    let base = format!("{}-{}-{}", sanitize(worker), plate_dir, t.format("%d-%m-%Y-%H-%M-%S"));
+    let dir = deca_dir.join(&plate_dir).join(&date_dir);
     std::fs::create_dir_all(&dir)?;
     for n in 1..=1000 {
         let file_name = if n == 1 { format!("{base}.pdf") } else { format!("{base}-{n}.pdf") };
         let path = dir.join(&file_name);
         match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
-            Ok(_) => return Ok(Reserved { location: Location { rel_dir, file_name }, path, kept: false }),
+            Ok(_) => return Ok(Reserved { location: Location { plate_dir, date_dir, file_name }, path, kept: false }),
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(e) => return Err(e),
         }

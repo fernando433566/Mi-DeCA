@@ -3,10 +3,10 @@ Esta app fue creada con IA. No me hago responsable de daños por errores, uso in
 
 | Fichero | Qué es |
 |---|---|
-| `deca-server-0.2.1-amd64.tar.gz` | Imagen Docker x86_64 del servidor: backend Rust + aplicación web del puerto 8134. También publicada en `ghcr.io/fernando433566/deca-server:latest` |
+| `deca-server-0.2.2-amd64.tar.gz` | Imagen Docker x86_64 del servidor: backend Rust + aplicación web del puerto 8134. También publicada en `ghcr.io/fernando433566/deca-server:latest` |
 | `docker-compose.yml` | Despliegue: imagen, puertos, volumen de datos y enlace HTTPS |
 | `.env.example` | Variables que se pueden cambiar (copiar como `.env`) |
-| `DeCA-0.2.1.apk` | App Android firmada (versión de publicación), Android 8.0 o superior |
+| `DeCA-0.2.2.apk` | App Android firmada (versión de publicación), Android 8.0 o superior |
 | `SHA256SUMS` | Sumas de comprobación de los ficheros anteriores |
 
 El código fuente está en [`../source`](../source) y la descripción completa del proyecto en el [README principal](../README.md).
@@ -17,7 +17,7 @@ Requisitos: un equipo Linux x86_64 con Docker y Docker Compose.
 
 ```bash
 sha256sum -c SHA256SUMS                         # comprobar los ficheros
-docker load -i deca-server-0.2.1-amd64.tar.gz   # carga la imagen deca-server:0.2.1, tambien se puede hacer docker pull a la imagen si se prefiere
+docker load -i deca-server-0.2.2-amd64.tar.gz   # carga la imagen deca-server:0.2.2, tambien se puede hacer docker pull a la imagen si se prefiere
 cp .env.example .env                            # y editar los valores (ver abajo)
 docker compose up -d
 docker compose ps                               # debe aparecer "healthy"
@@ -28,12 +28,12 @@ Abre `http://<ip-del-equipo>:8134` y entra con **`Admin` / `1234`**. Un asistent
 
 | Variable | Por defecto | Para qué |
 |---|---|---|
-| `DECA_IMAGE` | `deca-server:0.2.1` | Imagen. Se puede descargar ya compilada o a través de docker pull` |
+| `DECA_IMAGE` | `deca-server:0.2.2` | Imagen. Se puede descargar ya compilada o a través de docker pull` |
 | `DECA_PUBLIC_URL` | vacío | Enlace **HTTPS** de Cloudflare Tunnel con el que se accede desde fuera y que va en los QR. Si se deja vacío, se detecta y se comprueba sola la primera vez que **un administrador** entra por el túnel |
 | `DECA_BIND_ADDRESS` | `0.0.0.0` | `0.0.0.0` = accesible desde la red local; `127.0.0.1` = solo desde este equipo (si solo se entra por el túnel) |
 | `DECA_HOST_PORT` | `8134` | Puerto en el equipo anfitrión. Dentro del contenedor siempre es 8134 |
 | `DECA_ADMIN_PASSWORD` | vacío | Opcional, solo en el primer arranque: contraseña inicial de `Admin` (12+ caracteres) en lugar de `1234` |
-| `DECA_DATA` | `deca-data` | Dónde se guardan la base de datos, los PDF (`DeCA/Año/Mes/Día/…`) y los mapas: el volumen de Docker `deca-data` o la ruta absoluta de una carpeta propiedad del UID 10001 (`sudo chown -R 10001 /ruta`) |
+| `DECA_DATA` | `deca-data` | Dónde se guardan la base de datos, los PDF (`DeCA/Matrícula/Año/Mes/Día/…`) y los mapas: el volumen de Docker `deca-data` o la ruta absoluta de una carpeta propiedad del UID 10001 (`sudo chown -R 10001 /ruta`) |
 
 ### Acceso remoto (Cloudflare Tunnel)
 
@@ -89,6 +89,10 @@ Los navegadores solo permiten instalar la aplicación, usarla sin conexión y le
 ## 5. Administradores
 
 Por defecto, las cuentas nuevas son de trabajador. Un administrador puede escalarlas en Ajustes → empresa → Trabajadores → Trabajadores en mi empresa → perfil → casilla **Administrador**. Nadie puede cambiarse su propio permiso, y la casilla no aparece a los trabajadores.
+
+## Cambios de la versión 0.2.2
+
+- Los PDF se guardan en `DeCA/Matrícula/Año/Mes/Día/`. Al arrancar (y al restaurar una copia antigua) los PDF ya existentes se mueven solos a esa estructura; los enlaces de los QR no cambian.
 
 ## Cambios de seguridad de la versión 0.2.1
 

@@ -39,7 +39,7 @@ services:
       TZ: Europe/Madrid
       RUST_LOG: ${RUST_LOG:-info,sqlx=warn}
 
-    # Datos persistentes: base de datos (deca.db), PDF (DeCA/Año/Mes/Día/...) y mapas.
+    # Datos persistentes: base de datos (deca.db), PDF (DeCA/Matrícula/Año/Mes/Día/...) y mapas.
     # Por defecto un volumen de Docker con nombre; para usar una carpeta del anfitrión
     # pon DECA_DATA=/ruta/absoluta en .env (la carpeta debe pertenecer al UID 10001:
     # sudo chown -R 10001 /ruta/a/carpeta).

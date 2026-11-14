@@ -142,7 +142,8 @@ src/
 │   ├── model.rs       datos del DeCA, validación y cambios entre versiones
 │   ├── pdf/           maquetación y escritor PDF
 │   ├── qr.rs          QR (matriz, SVG, PNG)
-│   ├── storage.rs     carpetas DeCA/Año/Mes/Día y nombres de fichero
+│   ├── storage.rs     carpetas DeCA/Matrícula/Año/Mes/Día y nombres de fichero
+│   ├── layout.rs      paso de los PDF de la estructura antigua (Año/Mes/Día) a la actual
 │   └── mod.rs         emitir, modificar y consultar
 ├── preferences.rs     campos "fijados" (empresa, admin→trabajador, propios)
 ├── backup.rs          copias .json / .zip y restauración
@@ -152,8 +153,11 @@ src/
 └── routes/            un módulo por apartado de la app
 ```
 
-Los ficheros se guardan así: `DeCA/Año/Mes/Día/NombreTrabajador-Matricula-Dia-Mes-Año-Hora-Minuto-Segundo.pdf`.
+Los ficheros se guardan así: `DeCA/MatriculaDelCamion/Año/Mes/Día/NombreTrabajador-MatriculaDelCamion-Dia-Mes-Año-Hora-Minuto-Segundo.pdf`.
 Si en el mismo segundo se emiten varios viajes, se añade `-2`, `-3`, etc.
+La URL pública no lleva la matrícula (`/deca/Año/Mes/Día/<token>/<fichero>.pdf`), así que los QR
+emitidos antes de este cambio siguen funcionando. Los PDF guardados con la estructura antigua
+(`DeCA/Año/Mes/Día/…`) se mueven solos al arrancar y al restaurar una copia (`src/deca/layout.rs`).
 
 ## API
 

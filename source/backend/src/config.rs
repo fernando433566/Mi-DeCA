@@ -48,7 +48,7 @@ impl Config {
         self.data_dir.join("deca.db")
     }
 
-    /// Raíz del repositorio de PDF: `<data>/DeCA/Año/Mes/Día/...`
+    /// Raíz del repositorio de PDF: `<data>/DeCA/Matricula/Año/Mes/Día/...`
     pub fn deca_dir(&self) -> PathBuf {
         self.data_dir.join("DeCA")
     }

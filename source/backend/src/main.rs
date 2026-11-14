@@ -33,6 +33,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let pool = db::connect(&config.db_path()).await?;
+    deca::layout::migrate(&pool, &config.deca_dir()).await.context("no se pudieron reorganizar los PDF")?;
     let http = reqwest::Client::builder()
         .user_agent(maps::USER_AGENT)
         .timeout(std::time::Duration::from_secs(20))

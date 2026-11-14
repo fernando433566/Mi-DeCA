@@ -1,6 +1,7 @@
 //! Lógica de negocio de los DeCA: emisión atómica (PDF + URL + QR + registro),
 //! modificaciones con histórico de versiones y consultas.
 
+pub mod layout;
 pub mod model;
 pub mod pdf;
 pub mod qr;

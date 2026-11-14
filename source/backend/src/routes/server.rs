@@ -256,6 +256,8 @@ async fn restore_file(state: &AppState, path: &std::path::Path) -> AppResult<boo
     backup::import_json(&state.pool, &config)
         .await
         .map_err(|e| AppError::bad(format!("No se pudo restaurar: {e}")))?;
+    // Las copias anteriores traen los PDF con la estructura antigua.
+    crate::deca::layout::migrate(&state.pool, &state.config.deca_dir()).await?;
     Ok(is_zip)
 }
 

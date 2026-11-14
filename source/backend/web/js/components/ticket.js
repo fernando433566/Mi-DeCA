@@ -3,14 +3,13 @@
 
 import { h, icon } from '../core/dom.js';
 import { qrNode } from '../core/qr.js';
-import { fecha, fechaHora } from '../core/format.js';
+import { fecha, fechaHora, hora } from '../core/format.js';
 
 export function ticket(d, { onClick, showUser = false } = {}) {
   const datos = d.datos || {};
   const env = (datos.envios || [])[0] || {};
   const more = (datos.envios || []).length > 1 ? ` (+${datos.envios.length - 1})` : '';
   const badges = [];
-  if (d.viaje_total > 1) badges.push(h('span.badge', `Viaje ${d.viaje_num}/${d.viaje_total}`));
   if (d.version > 1) badges.push(h('span.badge', `Modificado v${d.version}`));
   if (d.url_activa === false) badges.push(h('span.badge.off', 'Enlace caducado'));
   return h('button.ticket', { type: 'button', onclick: onClick, 'aria-label': `DeCA ${d.numero}` },
@@ -33,31 +32,25 @@ export function ticket(d, { onClick, showUser = false } = {}) {
 }
 
 /**
- * Billetes de un DeCA con varios viajes (ida y vuelta): flecha a la izquierda para el
- * viaje anterior y a la derecha para el siguiente.
- * @param {Array} viajes  DeCA del grupo, del viaje 1 al último
- * @param {number} index  viaje mostrado (0 = el primero)
- * @param {(i:number) => void} onChange
+ * Tarjeta reducida para listas («Últimos 7 Días»): número, hora, ruta, matrícula y un
+ * QR pequeño. `action` es el texto bajo el QR (lo que pasa al pulsarla).
  */
-export function tripCarousel(viajes, index, { onChange, onOpen, showUser = false } = {}) {
-  const wrap = h('div');
-  const draw = () => {
-    const d = viajes[index];
-    const prev = h('button.trip-arrow', { type: 'button', 'aria-label': 'Viaje anterior', disabled: index === 0, onclick: () => move(-1) }, icon('back'));
-    const next = h('button.trip-arrow', { type: 'button', 'aria-label': 'Viaje siguiente', disabled: index === viajes.length - 1, onclick: () => move(1) }, icon('chev'));
-    wrap.replaceChildren(
-      h('div.trip-nav', prev, ticket(d, { onClick: () => onOpen && onOpen(d), showUser }), next),
-      h('p.trip-label', `Viaje ${index + 1} de ${viajes.length}`),
-    );
-  };
-  const move = (step) => {
-    index = Math.max(0, Math.min(viajes.length - 1, index + step));
-    draw();
-    onChange && onChange(index);
-  };
-  if (viajes.length === 1) return ticket(viajes[0], { onClick: () => onOpen && onOpen(viajes[0]), showUser });
-  draw();
-  return wrap;
+export function miniTicket(d, { onClick, action = 'Ver DeCA', showUser = false } = {}) {
+  const datos = d.datos || {};
+  const env = (datos.envios || [])[0] || {};
+  return h('button.mini-ticket', { type: 'button', onclick: onClick, 'aria-label': `${action}: ${d.numero}` },
+    h('div.mini-main',
+      h('div.mini-top', h('strong', d.numero), h('span.muted', hora(d.creado))),
+      h('div.mini-route', env.origen || '—', h('span.arrow', '→'), env.destino || '—'),
+      h('div.mini-meta',
+        datos.matricula_camion ? h('span.plate-badge', h('span', datos.matricula_camion)) : null,
+        showUser ? h('span', d.emitido_por) : null,
+        d.version > 1 ? h('span.badge', `v${d.version}`) : null,
+        d.url_activa === false ? h('span.badge.off', 'Caducado') : null,
+      ),
+    ),
+    h('div.mini-stub', d.url ? qrNode(d.url, 'mini-qr') : null, h('span.mini-pdf', action)),
+  );
 }
 
 /** Billete provisional de un DeCA que espera conexión (Android). */

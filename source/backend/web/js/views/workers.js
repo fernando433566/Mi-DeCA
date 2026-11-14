@@ -133,7 +133,7 @@ export async function profileView({ wid }) {
         h('dt', 'Verificación 2 pasos'), h('dd', w.tiene_2fa ? 'Activada' : 'No'),
       )),
       adminToggle,
-      sign({ text: 'Gestionar preferencias', sub: 'Datos fijados para este trabajador', ico: 'pin', chev: true, onClick: () => go(`/trabajador/${wid}/preferencias`) }),
+      sign({ text: 'Gestionar preferencias', sub: 'Autocompletado y preferencias visuales', ico: 'pin', chev: true, onClick: () => go(`/trabajador/${wid}/preferencias`) }),
       w.tiene_2fa ? sign({
         text: 'Quitar código de verificación', sub: 'Si ha perdido el móvil', ico: 'shield', color: 'yellow',
         onClick: async () => {

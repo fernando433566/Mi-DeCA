@@ -2,6 +2,7 @@
 //! Administrativo (DeCA) según la Orden FOM/2861/2012 y la Resolución de la
 //! DGTCF de 5 de junio de 2026.
 
+mod app_update;
 mod auth;
 mod backup;
 mod config;
@@ -46,6 +47,7 @@ async fn main() -> anyhow::Result<()> {
         login_limiter: Arc::default(),
         map_queue,
         public_url: Arc::default(),
+        app_update: Arc::default(),
     };
 
     jobs::spawn(state.clone());

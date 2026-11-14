@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- Actualizaciones de la app desde el origen que elige el administrador -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
@@ -37,6 +39,20 @@
             android:name="com.journeyapps.barcodescanner.CaptureActivity"
             android:screenOrientation="fullSensor"
             tools:replace="screenOrientation" />
+
+        <!-- PDF de DeCA descargados en los datos de la app: se comparten con el visor de PDF -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.pdf"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/pdf_paths" />
+        </provider>
+
+        <!-- Resultado de instalar una actualización de la app (Updater) -->
+        <receiver android:name=".UpdateReceiver" android:exported="false" />
 
         <!-- Widget: billete con el último DeCA y su QR -->
         <receiver

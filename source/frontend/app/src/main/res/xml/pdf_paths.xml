@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Carpeta de PDF de DeCA (ver PdfStore.java) que se puede compartir con el visor de PDF -->
+<paths>
+    <files-path name="pdf" path="pdf/" />
+</paths>

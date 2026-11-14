@@ -7,6 +7,10 @@
 //! 4. Sugerencias automáticas (datos de la empresa como transportista, nombre del conductor)
 //!
 //! Los valores rellenados automáticamente se pueden cambiar en cada DeCA antes de emitirlo.
+//!
+//! Las **preferencias visuales** ([`VISUAL`]) son ajustes de sí/no de la app y siguen las
+//! mismas capas (1-3): si el administrador las fija, el trabajador no puede cambiarlas.
+//! Sin valor en ninguna capa están desactivadas.
 
 use std::collections::BTreeMap;
 
@@ -36,22 +40,50 @@ pub const FIELDS: &[(&str, &str)] = &[
     ("destino", "Destino (dirección completa)"),
     ("matricula_camion", "Matrícula del camión"),
     ("matricula_remolque", "Matrícula del remolque"),
-    ("numero_viajes", "Número de viajes (ida y vuelta)"),
     ("autorizacion_especial", "Autorización especial de circulación"),
 ];
 
-const NUMERIC: &[&str] = &["peso_kg", "volumen_m3", "numero_viajes"];
+/// Preferencias visuales (sí/no), con su nombre para mostrar.
+pub const VISUAL: &[(&str, &str)] = &[
+    ("pdf_directo", "Mostrar PDF directamente al seleccionar un DeCA"),
+];
+
+/// Nombre para mostrar de cualquier preferencia.
+fn display_name(key: &str) -> &str {
+    FIELDS.iter().chain(VISUAL).find(|(f, _)| *f == key).map(|(_, n)| *n).unwrap_or(key)
+}
+
+const NUMERIC: &[&str] = &["peso_kg", "volumen_m3"];
 
 pub type Prefs = Map<String, Value>;
 
+/// Campos que existieron en versiones anteriores (p. ej. el número de viajes de ida y
+/// vuelta, eliminado en la 0.3.0). Pueden seguir guardados: se ignoran sin dar error.
+const RETIRED: &[&str] = &["numero_viajes"];
+
 pub fn parse(json_text: &str) -> Prefs {
-    serde_json::from_str(json_text).unwrap_or_default()
+    let mut prefs: Prefs = serde_json::from_str(json_text).unwrap_or_default();
+    prefs.retain(|k, _| !RETIRED.contains(&k.as_str()));
+    prefs
 }
 
 /// Valida un conjunto de preferencias recibido de la app. `null` o "" quita el campo.
 pub fn validate(input: Prefs) -> AppResult<Prefs> {
     let mut out = Map::new();
     for (k, v) in input {
+        if RETIRED.contains(&k.as_str()) {
+            continue;
+        }
+        if VISUAL.iter().any(|(f, _)| *f == k) {
+            match v {
+                Value::Null => {}
+                Value::Bool(_) => {
+                    out.insert(k, v);
+                }
+                _ => return Err(AppError::bad(format!("«{}» debe ser sí o no", display_name(&k)))),
+            }
+            continue;
+        }
         if !FIELDS.iter().any(|(f, _)| *f == k) {
             return Err(AppError::bad(format!("Campo de preferencias desconocido: {k}")));
         }
@@ -66,14 +98,6 @@ pub fn validate(input: Prefs) -> AppResult<Prefs> {
             Value::Number(n) if NUMERIC.contains(&k.as_str()) => Value::Number(n),
             _ => return Err(AppError::bad(format!("Valor no válido para «{k}»"))),
         };
-        if k == "numero_viajes" {
-            let n = v.as_f64().unwrap_or(0.0);
-            if !(1.0..=crate::deca::MAX_VIAJES as f64).contains(&n) {
-                return Err(AppError::bad("El número de viajes debe estar entre 1 y 30"));
-            }
-            out.insert(k, json!(n as u32));
-            continue;
-        }
         out.insert(k, v);
     }
     Ok(out)
@@ -154,7 +178,6 @@ pub async fn effective(pool: &SqlitePool, user: &CurrentUser, company_id: Option
         }
     }
     auto.insert("conductor".into(), json!(user.display_name));
-    auto.insert("numero_viajes".into(), json!(1));
 
     let layers = [
         (&admin_worker, Source::AdminTrabajador),
@@ -218,7 +241,6 @@ pub async fn effective(pool: &SqlitePool, user: &CurrentUser, company_id: Option
         "matricula_remolque": s("matricula_remolque"),
         "autorizacion_especial": s("autorizacion_especial"),
         "observaciones": "",
-        "numero_viajes": n("numero_viajes").unwrap_or(1.0) as u32,
     });
     Ok(Effective { campos, plantilla })
 }
@@ -227,9 +249,67 @@ pub async fn effective(pool: &SqlitePool, user: &CurrentUser, company_id: Option
 pub fn reject_locked(own: &Prefs, admin_worker: &Prefs, company: &Prefs) -> AppResult<()> {
     for k in own.keys() {
         if admin_worker.contains_key(k) || company.contains_key(k) {
-            let name = FIELDS.iter().find(|(f, _)| f == k).map(|(_, n)| *n).unwrap_or(k);
-            return Err(AppError::bad(format!("«{name}» lo ha fijado el administrador y no se puede cambiar")));
+            return Err(AppError::bad(format!("«{}» lo ha fijado el administrador y no se puede cambiar", display_name(k))));
         }
     }
     Ok(())
+}
+
+/// Preferencias visuales efectivas de un usuario con su origen. Sin valor: desactivadas.
+pub fn visual(admin_worker: &Prefs, company: &Prefs, own: &Prefs) -> Vec<EffectiveField> {
+    let layers = [(admin_worker, Source::AdminTrabajador), (company, Source::Empresa), (own, Source::Propia)];
+    VISUAL
+        .iter()
+        .map(|(key, name)| {
+            let found = layers.iter().find_map(|(map, src)| map.get(*key).filter(|v| v.is_boolean()).map(|v| (v.clone(), *src)));
+            EffectiveField {
+                campo: key,
+                nombre: name,
+                bloqueado: matches!(found, Some((_, Source::AdminTrabajador | Source::Empresa))),
+                origen: found.as_ref().map(|(_, s)| *s),
+                valor: Some(found.map(|(v, _)| v).unwrap_or(Value::Bool(false))),
+            }
+        })
+        .collect()
+}
+
+/// `{ "pdf_directo": true, ... }` para la app.
+pub async fn visual_values(pool: &SqlitePool, user_id: i64) -> AppResult<Map<String, Value>> {
+    let (admin_worker, company, own) = admin_layers(pool, user_id).await?;
+    Ok(visual(&admin_worker, &company, &own)
+        .into_iter()
+        .map(|f| (f.campo.to_string(), f.valor.unwrap_or(Value::Bool(false))))
+        .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn prefs(v: Value) -> Prefs {
+        v.as_object().unwrap().clone()
+    }
+
+    #[test]
+    fn visual_preferences_follow_the_layers() {
+        let none = Prefs::new();
+        let on = prefs(json!({ "pdf_directo": true }));
+        let off = prefs(json!({ "pdf_directo": false }));
+        // Sin valor: desactivada y libre.
+        let f = &visual(&none, &none, &none)[0];
+        assert_eq!((f.valor.clone(), f.bloqueado), (Some(json!(false)), false));
+        // El usuario elige.
+        assert_eq!(visual(&none, &none, &on)[0].valor, Some(json!(true)));
+        // Lo que fija el administrador (empresa o trabajador) manda y queda bloqueado.
+        let f = &visual(&none, &off, &on)[0];
+        assert_eq!((f.valor.clone(), f.bloqueado), (Some(json!(false)), true));
+        let f = &visual(&on, &off, &none)[0];
+        assert_eq!((f.valor.clone(), f.bloqueado), (Some(json!(true)), true));
+    }
+
+    #[test]
+    fn visual_preferences_must_be_booleans() {
+        assert!(validate(prefs(json!({ "pdf_directo": "sí" }))).is_err());
+        assert_eq!(validate(prefs(json!({ "pdf_directo": true }))).unwrap()["pdf_directo"], json!(true));
+    }
 }

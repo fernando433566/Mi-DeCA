@@ -43,10 +43,14 @@ export const native = {
   retryPending: () => call('retryPending'),
   /** Descarga un fichero con el gestor de descargas de Android (admite ficheros grandes). */
   download: (url, fileName, mime) => call('download', url, fileName, mime || ''),
-  /** Actualiza el widget con los viajes del último DeCA y el viaje que se está mostrando. */
-  updateWidget: (viajes, indice = 0) => call('updateWidget', JSON.stringify({ viajes: viajes || [], indice })),
-  /** Viaje que muestra el widget ahora mismo: { grupo_id, indice } (se puede cambiar desde el widget). */
-  widgetState: () => json(call('widgetState'), null),
+  /** Busca una versión nueva de la app y, si la hay, la instala. Resuelve con "al_dia" o "instalando". */
+  checkUpdate: () => callAsync('checkUpdate'),
+  /** Abre un PDF de DeCA guardado en la app; si no está, lo descarga antes. `info`: { id, version, creado, archivo }. */
+  openPdf: (info) => callAsync('openPdf', JSON.stringify(info)),
+  /** ¿Está ya descargado este PDF en el móvil? */
+  pdfSaved: (info) => call('pdfSaved', JSON.stringify(info)) === true,
+  /** Enseña en el widget el último DeCA (o lo vacía con `null`). */
+  updateWidget: (deca) => call('updateWidget', JSON.stringify(deca || null)),
   /** Brillo al máximo mientras se enseña el QR en un control. */
   setBrightness: (max) => call('setBrightness', !!max),
   /** Añade el widget del último DeCA a la pantalla de inicio. */

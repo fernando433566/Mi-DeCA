@@ -49,6 +49,13 @@ public class MainActivity extends ComponentActivity {
     private static final String BASE = "https://appassets.androidplatform.net/app/index.html";
 
     private static WeakReference<MainActivity> current = new WeakReference<>(null);
+    private boolean resumed;
+
+    /** La app abierta y en primer plano, o null. */
+    static MainActivity foreground() {
+        MainActivity a = current.get();
+        return a != null && a.resumed ? a : null;
+    }
 
     private WebView web;
     private String scanCallbackId;
@@ -85,6 +92,8 @@ public class MainActivity extends ComponentActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         current = new WeakReference<>(this);
+        // APK de una actualización anterior (ya instalada o abandonada).
+        new Thread(() -> Updater.cleanup(getApplicationContext())).start();
         if (webViewTooOld()) {
             showWebViewUpdate();
             return;
@@ -248,6 +257,11 @@ public class MainActivity extends ComponentActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        resumed = true;
+        // Actualizaciones de la app (si el administrador las tiene activadas).
+        if (Session.active(this)) UpdateWorker.checkOnOpen(this);
+        // PDF descargados de DeCA que ya no están en «Últimos 7 Días».
+        new Thread(() -> PdfStore.prune(getApplicationContext())).start();
         if (web == null) {
             // Pantalla de "actualiza el WebView": si ya se ha actualizado, se abre la app.
             if (!webViewTooOld()) recreate();
@@ -255,6 +269,12 @@ public class MainActivity extends ComponentActivity {
         }
         if (PendingQueue.hasWork(this)) DecaSyncWorker.schedule(this, false);
         web.evaluateJavascript("window.__decaQueueChanged&&window.__decaQueueChanged()", null);
+    }
+
+    @Override
+    protected void onPause() {
+        resumed = false;
+        super.onPause();
     }
 
     @Override

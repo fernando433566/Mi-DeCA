@@ -161,23 +161,6 @@ impl DecaDatos {
         Ok(())
     }
 
-    /// Datos del viaje de vuelta: cada envío con origen y destino intercambiados
-    /// (y los envíos en orden inverso, para deshacer la ruta).
-    pub fn reversed(&self) -> DecaDatos {
-        let mut d = self.clone();
-        d.envios.reverse();
-        for e in &mut d.envios {
-            std::mem::swap(&mut e.origen, &mut e.destino);
-        }
-        d
-    }
-
-    /// Datos del viaje número `n` (1, 2, 3…): los impares son la ida (A → B) y los
-    /// pares la vuelta (B → A).
-    pub fn for_trip(&self, n: i64) -> DecaDatos {
-        if n % 2 == 0 { self.reversed() } else { self.clone() }
-    }
-
     /// Último día del servicio (para calcular la caducidad del enlace público).
     pub fn service_end(&self) -> NaiveDate {
         self.fecha_fin.unwrap_or(self.fecha_transporte)
@@ -302,29 +285,6 @@ mod tests {
         assert_eq!(fmt_num(24500.0), "24.500");
         assert_eq!(fmt_num(1234567.5), "1.234.567,5");
         assert_eq!(fmt_num(12.25), "12,25");
-    }
-
-    #[test]
-    fn round_trips_alternate() {
-        let d = DecaDatos {
-            cargador: Parte::default(),
-            transportista: Transportista::default(),
-            conductor: None,
-            envios: vec![
-                Envio { origen: "A".into(), destino: "B".into(), ..Default::default() },
-                Envio { origen: "B".into(), destino: "C".into(), ..Default::default() },
-            ],
-            fecha_transporte: NaiveDate::from_ymd_opt(2026, 11, 7).unwrap(),
-            fecha_fin: None,
-            matricula_camion: "1234BCD".into(),
-            matricula_remolque: None,
-            autorizacion_especial: None,
-            observaciones: None,
-        };
-        let ruta = |d: &DecaDatos| d.envios.iter().map(|e| format!("{}>{}", e.origen, e.destino)).collect::<Vec<_>>().join(",");
-        assert_eq!(ruta(&d.for_trip(1)), "A>B,B>C");
-        assert_eq!(ruta(&d.for_trip(2)), "C>B,B>A");
-        assert_eq!(ruta(&d.for_trip(3)), "A>B,B>C");
     }
 
     #[test]

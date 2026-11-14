@@ -40,6 +40,22 @@ export async function view() {
   const days = select([['0', 'Nunca'], ['7', 'Cada semana'], ['30', 'Cada mes'], ['90', 'Cada 3 meses']], String(s.maps_auto_update_days));
   days.onchange = () => put({ maps_auto_update_days: Number(days.value) }).then(() => toast('Guardado', 'ok')).catch((e) => toast(e.message, 'err'));
 
+  // Actualizaciones de la app Android
+  const DEFAULT_UPDATES = 'https://github.com/fernando433566/Mi-DeCA/releases';
+  const updInput = input({ value: s.android_updates_url || '', type: 'url', placeholder: DEFAULT_UPDATES });
+  const updResult = h('div');
+  const showUpdate = (u) => updResult.replaceChildren(u.ultima
+    ? notice(`Última versión publicada: ${u.ultima.version}${u.ultima.sha256 ? ' (con SHA-256)' : ''}.`, 'ok', 'check')
+    : notice(`No se ha encontrado ninguna versión: ${u.error || 'sin datos'}`, 'danger', 'warning'));
+  const saveUpd = sign({ text: 'Guardar origen', ico: 'check', small: true });
+  saveUpd.onclick = () => busy(saveUpd, async () => {
+    await put({ android_updates_url: updInput.value.trim() });
+    toast('Origen guardado', 'ok');
+    showUpdate(await api('/api/app/update?comprobar=true'));
+  });
+  const checkUpd = sign({ text: 'Comprobar ahora', ico: 'refresh', small: true, color: 'white' });
+  checkUpd.onclick = () => busy(checkUpd, async () => showUpdate(await api('/api/app/update?comprobar=true')));
+
   const restore = sign({ text: 'Restaurar de una copia de seguridad', sub: 'Fichero .json o .zip', ico: 'upload', color: 'yellow' });
   restore.onclick = () => busy(restore, async () => {
     const file = await pickFile('.json,.zip,application/json,application/zip');
@@ -85,6 +101,17 @@ export async function view() {
       panel(field('Dirección manual (opcional)', urlInput, { hint: 'Déjala vacía para usar la detectada automáticamente.' }), h('div.grid2', saveUrl, check)),
       section('Mapas sin conexión'),
       panel(field('Nivel de detalle de los mapas', zoom), field('Actualizar mapas', days)),
+      section('Actualizaciones de la app Android'),
+      toggle('Buscar e instalar actualizaciones automáticamente', s.android_updates_auto,
+        (v) => put({ android_updates_auto: v }).then(() => toast(v ? 'Activadas' : 'Desactivadas', 'ok')).catch((e) => toast(e.message, 'err')),
+        'Para ti y todos tus trabajadores: la app comprueba al abrirse y cada 12 horas y, si hay versión nueva, la instala.'),
+      panel(
+        field('Origen de las actualizaciones', updInput, {
+          hint: `Vacío = ${DEFAULT_UPDATES}. Admite las releases de GitHub o de Gitea/Forgejo (como Codeberg) o un fichero JSON {"version", "apk", "sha256"}. Android solo instala versiones firmadas como la app actual.`,
+        }),
+        h('div.grid2', saveUpd, checkUpd),
+        updResult,
+      ),
     ],
   });
 }

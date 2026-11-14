@@ -34,11 +34,10 @@ Para desplegar con Docker Compose, ver [`../../git`](../../git).
 | `DECA_ADMIN_PASSWORD`     | —           | Opcional, primer arranque: contraseña inicial de `Admin` en vez de `1234` (también `DECA_ADMIN_PASSWORD_FILE`) |
 | `DECA_ALLOW_INSECURE_URL` | `false`     | Solo para pruebas locales: acepta `http://` |
 
-## Viajes de ida y vuelta
+## Un DeCA por emisión
 
-Con `numero_viajes` = N se crean N DeCA (uno por viaje, cada uno con su QR). Los impares van A → B y los pares B → A:
-en cada envío se intercambian origen y destino, y si hay varios envíos se recorren en orden inverso. Mercancía, peso y vehículo no cambian.
-Los listados («Últimos 7 días», administración) muestran cada grupo en orden de viaje, y «DeCA más reciente» empieza por el viaje 1.
+Cada emisión crea un único DeCA con su QR. El sistema de varios viajes de ida y vuelta
+se eliminó en la 0.3.0: los DeCA emitidos así antes siguen existiendo, cada uno por separado.
 
 ## Aplicación web (`web/`)
 
@@ -52,7 +51,7 @@ web/
 ├── index.html, css/app.css      tema visual
 ├── js/app.js                    arranque, sesión y rutas
 ├── js/core/                     API, puente nativo (Android), enrutador, componentes, QR local, formatos
-├── js/components/               billete y viajes, autocompletado, direcciones, selector de mapa
+├── js/components/               billete, billete reducido, autocompletado, direcciones, selector de mapa
 ├── js/views/                    una pantalla por fichero (login, inicio, crear DeCA, ajustes...)
 └── vendor/                      librerías y recursos de mapas incluidos (ver vendor/LICENSES.md)
 ```
@@ -142,22 +141,26 @@ src/
 │   ├── model.rs       datos del DeCA, validación y cambios entre versiones
 │   ├── pdf/           maquetación y escritor PDF
 │   ├── qr.rs          QR (matriz, SVG, PNG)
-│   ├── storage.rs     carpetas DeCA/Matrícula/Año/Mes/Día y nombres de fichero
-│   ├── layout.rs      paso de los PDF de la estructura antigua (Año/Mes/Día) a la actual
+│   ├── storage.rs     carpetas DeCA/Matrícula/Año/NombreMes/Día y nombres Nº<n>-…
+│   ├── layout.rs      reorganiza los PDF de versiones anteriores al formato actual
 │   └── mod.rs         emitir, modificar y consultar
-├── preferences.rs     campos "fijados" (empresa, admin→trabajador, propios)
+├── preferences.rs     campos "fijados" y preferencias visuales (empresa, admin→trabajador, propios)
 ├── backup.rs          copias .json / .zip y restauración
 ├── jobs.rs            borrado diario a las 12:00 de PDF con más de 366 días
+├── app_update.rs      origen de las actualizaciones de la app Android (GitHub, Gitea/Forgejo, JSON)
 ├── public_url.rs      dirección pública: detección por el túnel y confirmación HTTPS
 ├── maps/              mapas sin conexión por regiones (catálogo, recorte PMTiles) y teselas en caché
 └── routes/            un módulo por apartado de la app
 ```
 
-Los ficheros se guardan así: `DeCA/MatriculaDelCamion/Año/Mes/Día/NombreTrabajador-MatriculaDelCamion-Dia-Mes-Año-Hora-Minuto-Segundo.pdf`.
-Si en el mismo segundo se emiten varios viajes, se añade `-2`, `-3`, etc.
-La URL pública no lleva la matrícula (`/deca/Año/Mes/Día/<token>/<fichero>.pdf`), así que los QR
-emitidos antes de este cambio siguen funcionando. Los PDF guardados con la estructura antigua
-(`DeCA/Año/Mes/Día/…`) se mueven solos al arrancar y al restaurar una copia (`src/deca/layout.rs`).
+Los ficheros se guardan así:
+`DeCA/MatriculaDelCamion/Año/NombreMes/Día/Nº<n>-NombreTrabajador-MatriculaDelCamion-Día-NombreMes-Año-Hora-Minuto-Segundo.pdf`,
+por ejemplo `DeCA/1234BCD/2026/Noviembre/14/Nº7-Pepe_Perez-1234BCD-14-Noviembre-2026-13-05-09.pdf`.
+`<n>` es el número del DeCA: 1 el primero que se emitió, 2 el segundo… (el mismo que `DECA-Año-00000n`).
+La URL pública no lleva la matrícula y usa el mes en número (`/deca/Año/Mes/Día/<token>/<fichero>.pdf`,
+con la «º» codificada como `%C2%BA`), así que los QR emitidos con versiones anteriores siguen funcionando.
+Los PDF guardados por versiones anteriores se renombran y se mueven solos al arrancar y al restaurar
+una copia (`src/deca/layout.rs`).
 
 ## API
 
@@ -197,9 +200,18 @@ Campos que se pueden fijar:
 | `volumen_m3`, `peso_kg` | Volumen de carga del camión y peso |
 | `origen`, `destino` | Dirección completa |
 | `matricula_camion`, `matricula_remolque` | Matrículas |
-| `numero_viajes`, `conductor`, `autorizacion_especial` | Viajes (ida y vuelta), conductor opcional, autorización especial |
+| `conductor`, `autorizacion_especial` | Conductor opcional, autorización especial |
 
 Prioridad: admin→trabajador > empresa > propias del trabajador > automáticas (los datos de la empresa, incluido su `titular`, como transportista, y el nombre del usuario como conductor).
+
+**Preferencias visuales** (sí/no, `preferences::VISUAL`), en el mismo JSON de preferencias y con las mismas capas:
+
+| Campo | Qué hace |
+|---|---|
+| `pdf_directo` | «Mostrar PDF directamente al seleccionar un DeCA»: al pulsar un billete de «Últimos 7 Días» se abre su PDF en vez de la página del DeCA |
+
+Si el administrador la fija (empresa o trabajador) como activada o desactivada, el trabajador no puede cambiarla;
+si no, cada usuario elige (por defecto, desactivada). El valor efectivo llega en `preferencias_visuales` de `/api/auth/me`.
 
 ### Empresa y trabajadores (admin)
 | Método | Ruta | Apartado |
@@ -224,14 +236,15 @@ Al emitir un DeCA, los cargadores, transportistas, direcciones, mercancías, cam
 | Método | Ruta | Descripción |
 |---|---|---|
 | GET | `/api/decas/plantilla` | Formulario prerrellenado con las preferencias |
-| POST | `/api/decas` | Emite: cuerpo de la plantilla + `numero_viajes` (un DeCA por viaje) + `client_ref` opcional (UUID: si se repite, devuelve los DeCA ya creados sin duplicarlos). Responde `{decas, enlace_verificado, aviso}` |
-| GET | `/api/decas/ultimo` | «DeCA más reciente»: lista con todos los viajes del último DeCA, del 1 al último (vacía si no hay ninguno) |
+| POST | `/api/decas` | Emite un DeCA: cuerpo de la plantilla + `client_ref` opcional (UUID: si se repite, devuelve los DeCA ya creados sin duplicarlos). Responde `{decas, enlace_verificado, aviso}` |
+| GET | `/api/decas/ultimo` | «DeCA más reciente»: lista con 0 o 1 DeCA (lista por compatibilidad con las apps 0.2.x) |
 | GET | `/api/decas/recientes` | «Últimos 7 días». El admin ve los de todos |
-| GET/PUT | `/api/decas/{id}` | Detalle (incluye `viajes`: los demás viajes del mismo DeCA) / modificar `{datos, motivo}` |
+| GET/PUT | `/api/decas/{id}` | Detalle / modificar `{datos, motivo}` |
 | GET | `/api/decas/{id}/pdf[?version=N]` | PDF con sesión (conservación de 1 año) |
 | GET | `/api/decas/{id}/qr.png[?escala=]` · `qr.svg` | QR suelto |
 | GET | `/api/decas/{id}/historial` | Registro con fecha y hora |
-| GET | `/api/widget/ultimo` | `{viajes: [...]}`: viajes del último DeCA con datos mínimos + QR en PNG base64 |
+| GET | `/api/app/update` | Última versión de la app Android en el origen elegido (`?comprobar=true`, solo admin: sin caché) |
+| GET | `/api/widget/ultimo` | `{viajes: [...]}` (nombre heredado de las apps 0.2.x): el último DeCA con datos mínimos + QR en PNG base64 |
 | GET | `/deca/...` | **Pública**: la URL del QR |
 | GET | `/sw.js` | Service worker de la aplicación instalable (generado) |
 | GET | `/api/info` | Comprueba que una dirección es un servidor DeCA (la usa la app al iniciar sesión) |

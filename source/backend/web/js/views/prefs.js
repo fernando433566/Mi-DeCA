@@ -1,16 +1,19 @@
-// Editor de preferencias ("fijar" campos que se rellenan solos en cada DeCA).
+// Editor de preferencias: "fijar" campos que se rellenan solos en cada DeCA y
+// las preferencias visuales (sí/no).
 // Se usa en: Ajustes -> Preferencias (propias), Preferencias de la empresa y
 // Preferencias de un trabajador (administrador).
 
 import { h } from '../core/dom.js';
 import { api } from '../core/api.js';
-import { page, sign, loading, errorView, input, busy, toast, notice } from '../core/ui.js';
+import { page, sign, loading, errorView, input, busy, toast, notice, select, toggle, panel, field } from '../core/ui.js';
+import { setUser } from '../core/state.js';
+import { go } from '../core/router.js';
 import { combo, matches } from '../components/combo.js';
 import { addressInput } from '../components/address.js';
 import * as catalog from '../components/catalog.js';
 import { parseNum } from '../core/format.js';
 
-const NUMERIC = ['peso_kg', 'volumen_m3', 'numero_viajes'];
+const NUMERIC = ['peso_kg', 'volumen_m3'];
 const PLATES = ['matricula_camion', 'matricula_remolque', 'cargador_nif', 'transportista_nif'];
 const ADDRESS = ['origen', 'destino'];
 
@@ -110,62 +113,165 @@ function editor(fields, values, locked = {}) {
   return container;
 }
 
-async function screen({ title, back, load, save, intro }) {
+/**
+ * «Preferencias visuales» (sí/no).
+ * - Del propio usuario: un interruptor; si el administrador lo fijó, solo se muestra.
+ * - Del administrador (empresa o trabajador): «No fijar», «Activado por defecto» o
+ *   «Desactivado por defecto». Lo que se fija aquí no lo puede cambiar el trabajador.
+ * @param {Array<{campo, nombre, bloqueado?, valor?}>} fields
+ * @param {object} values  valores guardados en este nivel
+ * @param {{ admin: boolean }} options
+ */
+function visualEditor(fields, values, { admin }) {
+  const read = {};
+  const nodes = (fields || []).map(({ campo, nombre, bloqueado, valor }) => {
+    if (!admin && bloqueado) {
+      return h('div.panel', { style: { opacity: '.85' } },
+        h('div.switch', h('span', h('strong', nombre), h('div.muted', `Fijado por el administrador: ${valor ? 'activado' : 'desactivado'}`)), h('span.pin.lock', 'Bloqueado')));
+    }
+    if (admin) {
+      const current = values[campo] === true ? 'on' : values[campo] === false ? 'off' : '';
+      const sel = select([['', 'No fijar (lo elige cada usuario)'], ['on', 'Activado por defecto'], ['off', 'Desactivado por defecto']], current);
+      read[campo] = () => (sel.value === '' ? undefined : sel.value === 'on');
+      return panel(field(nombre, sel));
+    }
+    let on = values[campo] === true;
+    read[campo] = () => on;
+    return toggle(nombre, on, (v) => { on = v; });
+  });
+  const container = h('div', nodes);
+  container.collect = () => {
+    const out = {};
+    for (const [campo, get] of Object.entries(read)) {
+      const v = get();
+      if (v !== undefined) out[campo] = v;
+    }
+    return out;
+  };
+  return container;
+}
+
+/** Los dos apartados de cada pantalla de preferencias. */
+const PARTS = {
+  autocompletado: { title: 'Preferencias de autocompletado', sub: 'Datos que se rellenan solos al crear un DeCA', ico: 'pin' },
+  visuales: { title: 'Preferencias visuales', sub: 'Cómo se muestran los DeCA en la app', ico: 'eye' },
+};
+
+/** Menú «Preferencias»: un botón por apartado. */
+function menu({ title, back, base, intro }) {
+  page({
+    title,
+    back,
+    body: [
+      intro,
+      ...Object.entries(PARTS).map(([part, p]) => sign({ text: p.title, sub: p.sub, ico: p.ico, chev: true, onClick: () => go(`${base}/${part}`) })),
+    ],
+  });
+}
+
+/**
+ * Página de un apartado. El servidor guarda todas las preferencias de un nivel de una
+ * vez, así que al guardar un apartado se conservan tal cual los valores del otro.
+ * @param {'autocompletado'|'visuales'} part
+ */
+async function screen({ part, back, load, save, intro, admin = false }) {
+  if (!PARTS[part]) return go(back, { replace: true });
+  const { title } = PARTS[part];
   page({ title, back, body: loading() });
   let data;
   try {
     data = await load();
   } catch (e) {
-    return page({ title, back, body: errorView(e, () => screen({ title, back, load, save, intro })) });
+    return page({ title, back, body: errorView(e, () => screen({ part, back, load, save, intro, admin })) });
   }
-  const ed = editor(data.fields, data.values, data.locked);
+  const ed = part === 'autocompletado'
+    ? editor(data.fields, data.values, data.locked)
+    : visualEditor(data.visual, data.values, { admin });
+  const otherKeys = (part === 'autocompletado' ? data.visual : data.fields).map((f) => f.campo);
+  const kept = Object.fromEntries(Object.entries(data.values).filter(([k]) => otherKeys.includes(k)));
   const btn = sign({ text: 'Guardar preferencias', ico: 'check', color: 'green', center: true });
   btn.onclick = () => busy(btn, async () => {
-    await save(ed.collect());
+    await save({ ...kept, ...ed.collect() });
     toast('Preferencias guardadas', 'ok');
   });
-  page({ title, back, body: [intro, ed], actions: [btn] });
+  page({ title, back, body: [part === 'autocompletado' ? intro : null, ed], actions: [btn] });
 }
 
 const str = (v) => (v === null || v === undefined ? '' : String(v));
 
-export function ownView() {
+// ---------- Ajustes → Preferencias (propias) ----------
+
+const OWN = '/ajustes/preferencias';
+
+export function ownMenu() {
+  menu({ title: 'Preferencias', back: '/ajustes', base: OWN });
+}
+
+export function ownView({ part }) {
   return screen({
-    title: 'Preferencias',
-    back: '/ajustes',
+    part,
+    back: OWN,
     intro: notice('Los datos que fijes se rellenan solos al crear un DeCA. Siempre puedes cambiarlos en cada DeCA.', 'info', 'pin'),
     load: async () => {
       const r = await api('/api/me/preferences');
       const locked = {};
       for (const [k, v] of Object.entries({ ...r.fijadas_por_administrador.empresa, ...r.fijadas_por_administrador.trabajador })) locked[k] = str(v);
-      return { fields: r.campos, values: r.propias, locked };
+      return { fields: r.campos, visual: r.visuales, values: r.propias, locked };
     },
-    save: (v) => api('/api/me/preferences', { method: 'PUT', body: v }),
+    save: async (v) => {
+      await api('/api/me/preferences', { method: 'PUT', body: v });
+      // Las preferencias visuales efectivas llegan con los datos del usuario.
+      setUser(await api('/api/auth/me'));
+    },
   });
 }
 
-export function companyView({ cid }) {
-  return screen({
+// ---------- Administración: preferencias de la empresa ----------
+
+export function companyMenu({ cid }) {
+  menu({
     title: 'Preferencias de la empresa',
     back: `/empresa/${cid}/preferencias`,
+    base: `/empresa/${cid}/preferencias/empresa`,
+    intro: notice('Se aplican a todos los trabajadores de la empresa. Ellos no podrán cambiar estas preferencias.', 'info', 'building'),
+  });
+}
+
+export function companyView({ cid, part }) {
+  return screen({
+    part,
+    back: `/empresa/${cid}/preferencias/empresa`,
     intro: notice('Se aplican a todos los trabajadores de la empresa. Ellos no podrán cambiar estas preferencias.', 'info', 'building'),
     load: async () => {
       const r = await api(`/api/companies/${cid}/preferences`);
-      return { fields: r.campos, values: r.fijadas, locked: {} };
+      return { fields: r.campos, visual: r.visuales, values: r.fijadas, locked: {} };
     },
+    admin: true,
     save: (v) => api(`/api/companies/${cid}/preferences`, { method: 'PUT', body: v }),
   });
 }
 
-export function workerView({ wid }) {
-  return screen({
+// ---------- Administración: preferencias de un trabajador ----------
+
+export function workerMenu({ wid }) {
+  menu({
     title: 'Preferencias del trabajador',
     back: `/trabajador/${wid}`,
+    base: `/trabajador/${wid}/preferencias`,
+    intro: notice('Solo para este trabajador. Tienen prioridad sobre las de la empresa.', 'info', 'user'),
+  });
+}
+
+export function workerView({ wid, part }) {
+  return screen({
+    part,
+    back: `/trabajador/${wid}/preferencias`,
     intro: notice('Solo para este trabajador. Tienen prioridad sobre las de la empresa.', 'info', 'user'),
     load: async () => {
       const r = await api(`/api/workers/${wid}/preferences`);
-      return { fields: r.campos, values: r.fijadas, locked: {} };
+      return { fields: r.campos, visual: r.visuales, values: r.fijadas, locked: {} };
     },
+    admin: true,
     save: (v) => api(`/api/workers/${wid}/preferences`, { method: 'PUT', body: v }),
   });
 }

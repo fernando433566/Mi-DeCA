@@ -67,9 +67,8 @@ public class DecaSyncWorker extends Worker {
                     JSONArray decas = res.optJSONArray("decas");
                     synchronized (Session.class) {
                     if (Session.isCurrent(c, owner) && decas != null && decas.length() > 0) {
-                        // El widget empieza por el viaje 1.
-                        DecaWidget.save(c, decas.toString(), 0);
-                        Notifier.created(c, decas.getJSONObject(0), decas.length());
+                        DecaWidget.save(c, decas.getJSONObject(0));
+                        Notifier.created(c, decas.getJSONObject(0));
                     }
                     }
                 } else if (r.status >= 500 || r.status == 408 || r.status == 429) {

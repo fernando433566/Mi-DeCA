@@ -43,6 +43,8 @@ pub struct UserInfo {
     pub tiene_2fa: bool,
     /// El administrador sigue con la contraseña inicial "1234": solo puede cambiarla.
     pub contrasena_por_defecto: bool,
+    /// Preferencias visuales efectivas (`{ "pdf_directo": bool }`), ver `preferences::VISUAL`.
+    pub preferencias_visuales: serde_json::Map<String, serde_json::Value>,
 }
 
 pub async fn user_info(state: &AppState, user_id: i64) -> AppResult<UserInfo> {
@@ -61,6 +63,7 @@ pub async fn user_info(state: &AppState, user_id: i64) -> AppResult<UserInfo> {
         usuario,
         nombre,
         contrasena_por_defecto,
+        preferencias_visuales: crate::preferences::visual_values(&state.pool, id).await?,
         rol,
         empresa_id,
         empresa_nombre,

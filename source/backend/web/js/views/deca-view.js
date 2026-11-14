@@ -1,14 +1,15 @@
 // Detalle de un DeCA (datos introducidos + QR) y lista "Últimos 7 Días".
 
 import { h, icon } from '../core/dom.js';
-import { api, cache, cachedGet, downloadFile } from '../core/api.js';
-import { page, sign, section, notice, loading, errorView, panel, listItem, modal } from '../core/ui.js';
+import { api, cache, cachedGet } from '../core/api.js';
+import { page, sign, section, notice, loading, errorView, panel, listItem, modal, toast } from '../core/ui.js';
 import { go, onLeave } from '../core/router.js';
 import { native } from '../core/native.js';
 import { isAdmin, setNet, state } from '../core/state.js';
 import { qrNode } from '../core/qr.js';
-import { ticket, tripCarousel } from '../components/ticket.js';
+import { ticket, miniTicket } from '../components/ticket.js';
 import { fecha, fechaHora, kg, num, diaCorto } from '../core/format.js';
+import { openPdf, isPdfSaved, pdfButtonText } from '../core/pdf.js';
 
 /** QR a pantalla completa con brillo máximo (para el agente en un control). */
 export function showQrFullscreen(d) {
@@ -38,12 +39,7 @@ function findCached(id) {
   if (c) return c;
   const lists = [cache.get('recientes', []), cache.get('ultimo', [])].flat().filter(Boolean);
   const d = lists.find((x) => String(x.id) === String(id));
-  if (!d) return null;
-  const viajes = lists.filter((x) => x.grupo_id === d.grupo_id)
-    .filter((x, i, a) => a.findIndex((y) => y.id === x.id) === i)
-    .sort((a, b) => a.viaje_num - b.viaje_num)
-    .map((x) => ({ id: x.id, viaje_num: x.viaje_num, numero: x.numero }));
-  return { deca: d, versiones_anteriores: [], viajes };
+  return d ? { deca: d, versiones_anteriores: [] } : null;
 }
 
 export async function view({ id }) {
@@ -64,21 +60,7 @@ export async function view({ id }) {
 
   const qrBtn = sign({ text: 'Enseñar QR', sub: 'Pantalla completa para el control', ico: 'qr', color: 'green', center: true, onClick: () => showQrFullscreen(d) });
 
-  // Varios viajes: flechas para pasar al viaje anterior / siguiente.
-  const viajes = res.viajes || [];
-  const pos = viajes.findIndex((v) => v.id === d.id);
-  let head = ticket(d, { onClick: () => showQrFullscreen(d), showUser: true });
-  if (viajes.length > 1 && pos >= 0) {
-    const nav = (step) => go(`/deca/${viajes[pos + step].id}`, { replace: true });
-    head = h('div',
-      h('div.trip-nav',
-        h('button.trip-arrow', { type: 'button', 'aria-label': 'Viaje anterior', disabled: pos === 0, onclick: () => nav(-1) }, icon('back')),
-        head,
-        h('button.trip-arrow', { type: 'button', 'aria-label': 'Viaje siguiente', disabled: pos === viajes.length - 1, onclick: () => nav(1) }, icon('chev')),
-      ),
-      h('p.trip-label', `Viaje ${pos + 1} de ${viajes.length}`),
-    );
-  }
+  const head = ticket(d, { onClick: () => showQrFullscreen(d), showUser: true });
 
   const body = [
     head,
@@ -86,7 +68,7 @@ export async function view({ id }) {
       ? notice(`Enlace del QR activo hasta el ${fechaHora(d.url_caduca)}.`, 'ok', 'check')
       : notice(d.pdf_disponible ? 'El enlace público del QR ha caducado. El PDF sigue guardado en el servidor.' : 'El PDF se eliminó al superar el año de conservación.', '', 'clock'),
     h('div.grid2.mt',
-      d.pdf_disponible ? sign({ text: 'Descargar PDF', ico: 'download', small: true, onClick: () => downloadFile(d.pdf, `${d.numero}.pdf`, 'application/pdf') }) : null,
+      d.pdf_disponible ? sign({ text: pdfButtonText(d), ico: 'download', small: true, onClick: () => showPdf(d) }) : null,
       canEdit && d.url_activa ? sign({ text: 'Modificar', sub: 'Mismo QR', ico: 'edit', small: true, color: 'white', onClick: () => go(`/deca/${d.id}/modificar`) }) : null,
     ),
     section('Cargador contractual'),
@@ -102,7 +84,6 @@ export async function view({ id }) {
     panel(kv([
       ['Fecha de realización', fecha(datos.fecha_transporte)],
       ['Fin previsto', datos.fecha_fin ? fecha(datos.fecha_fin) : ''],
-      ['Viaje', d.viaje_total > 1 ? `${d.viaje_num} de ${d.viaje_total}` : ''],
       ['Matrícula camión', datos.matricula_camion],
       ['Matrícula remolque', datos.matricula_remolque],
       ['Conductor', datos.conductor],
@@ -134,11 +115,19 @@ export async function view({ id }) {
   if (res.versiones_anteriores && res.versiones_anteriores.length && d.pdf_disponible) {
     body.push(section('Versiones anteriores'));
     for (const v of res.versiones_anteriores) {
-      body.push(listItem({ title: `Versión ${v.version}`, sub: fechaHora(v.created_at), ico: 'deca', onClick: () => downloadFile(`${d.pdf}?version=${v.version}`, `${d.numero}-v${v.version}.pdf`, 'application/pdf') }));
+      body.push(listItem({ title: `Versión ${v.version}`, sub: fechaHora(v.created_at), ico: 'deca', onClick: () => showPdf(d, v.version) }));
     }
   }
 
   page({ title: d.numero, back: '/', body, actions: [qrBtn] });
+}
+
+/** Abre el PDF avisando mientras se descarga y mostrando los errores. */
+function showPdf(d, version = d.version) {
+  const downloading = !isPdfSaved(d, version);
+  const opening = openPdf(d, version);
+  if (downloading) toast('Descargando el PDF…');
+  return opening.catch((e) => toast(e.message, 'danger'));
 }
 
 export async function recentView() {
@@ -157,7 +146,9 @@ export async function recentView() {
         day = dd;
         body.push(section(dd));
       }
-      body.push(ticket(d, { onClick: () => go(`/deca/${d.id}`), showUser: isAdmin() }));
+      // «Mostrar PDF directamente al seleccionar un DeCA» (Ajustes → Preferencias visuales).
+      const direct = !!state.user?.preferencias_visuales?.pdf_directo;
+      body.push(miniTicket(d, { onClick: () => (direct ? showPdf(d) : go(`/deca/${d.id}`)), action: direct ? 'Abrir PDF' : 'Ver DeCA', showUser: isAdmin() }));
     }
     page({
       title: 'Últimos 7 Días',

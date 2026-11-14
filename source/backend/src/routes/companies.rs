@@ -158,7 +158,8 @@ async fn get_prefs(State(state): State<AppState>, AdminUser(_): AdminUser, Path(
         .await?
         .ok_or_else(|| AppError::not_found("Empresa no encontrada"))?;
     let campos: Vec<Value> = preferences::FIELDS.iter().map(|(k, n)| json!({ "campo": k, "nombre": n })).collect();
-    Ok(Json(json!({ "fijadas": preferences::parse(&p), "campos": campos })))
+    let visuales: Vec<Value> = preferences::VISUAL.iter().map(|(k, n)| json!({ "campo": k, "nombre": n })).collect();
+    Ok(Json(json!({ "fijadas": preferences::parse(&p), "campos": campos, "visuales": visuales })))
 }
 
 async fn put_prefs(State(state): State<AppState>, AdminUser(_): AdminUser, Path(id): Path<i64>, Json(input): Json<Prefs>) -> AppResult<Json<Value>> {
@@ -252,7 +253,7 @@ async fn list_decas(State(state): State<AppState>, AdminUser(_): AdminUser, Path
         .bind(cid).bind(f.trabajador).bind(from).bind(to).bind(&plate)
         .fetch_one(&state.pool)
         .await?;
-    let rows: Vec<DecaRow> = sqlx::query_as(&format!("SELECT * FROM decas {where_sql} ORDER BY {} LIMIT ?6 OFFSET ?7", super::decas::GROUP_ORDER))
+    let rows: Vec<DecaRow> = sqlx::query_as(&format!("SELECT * FROM decas {where_sql} ORDER BY created_at DESC, id DESC LIMIT ?6 OFFSET ?7"))
         .bind(cid).bind(f.trabajador).bind(from).bind(to).bind(&plate)
         .bind(per_page)
         .bind((page - 1) * per_page)

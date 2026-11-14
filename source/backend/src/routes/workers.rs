@@ -178,11 +178,13 @@ async fn get_prefs(State(state): State<AppState>, AdminUser(_): AdminUser, Path(
     fetch(&state, id).await?;
     let (admin_worker, company, own) = preferences::admin_layers(&state.pool, id).await?;
     let campos: Vec<Value> = preferences::FIELDS.iter().map(|(k, n)| json!({ "campo": k, "nombre": n })).collect();
+    let visuales: Vec<Value> = preferences::VISUAL.iter().map(|(k, n)| json!({ "campo": k, "nombre": n })).collect();
     Ok(Json(json!({
         "fijadas": admin_worker,
         "empresa": company,
         "del_trabajador": own,
         "campos": campos,
+        "visuales": visuales,
     })))
 }
 

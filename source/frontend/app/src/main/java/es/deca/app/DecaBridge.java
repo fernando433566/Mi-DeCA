@@ -30,6 +30,7 @@ public class DecaBridge {
         Session.save(ctx, json);
         if (Session.active(ctx)) {
             WidgetRefreshWorker.schedule(ctx);
+            UpdateWorker.schedule(ctx);
             if (PendingQueue.hasWork(ctx)) DecaSyncWorker.schedule(ctx, true);
         }
     }
@@ -81,23 +82,77 @@ public class DecaBridge {
         DecaSyncWorker.schedule(ctx, true);
     }
 
-    // ---------------- Widget y pantalla ----------------
+    // ---------------- PDF de los DeCA (datos privados de la app) ----------------
 
-    /** {"viajes": [...], "indice": n}: viajes del último DeCA y el que se muestra. */
+    /**
+     * Abre el PDF de un DeCA con el visor del móvil; si no está descargado, lo descarga
+     * antes en los datos de la app (ver {@link PdfStore}). `infoJson`: {id, version, creado, archivo}.
+     */
     @JavascriptInterface
-    public void updateWidget(String json) {
+    public void openPdf(String callbackId, String infoJson) {
+        new Thread(() -> {
+            try {
+                Session.Snapshot owner = Session.snapshot(ctx);
+                if (!owner.active()) throw new IllegalStateException("Inicia sesión para ver el PDF");
+                java.io.File pdf = PdfStore.fetch(ctx, owner, PdfStore.Info.parse(infoJson));
+                activity.runOnUiThread(() -> {
+                    try {
+                        PdfStore.open(activity, pdf);
+                        activity.resolveJs(callbackId, true, "");
+                    } catch (Exception e) {
+                        activity.resolveJs(callbackId, false, e.getMessage());
+                    }
+                });
+            } catch (Exception e) {
+                String msg = e.getMessage() != null ? e.getMessage() : "No se pudo abrir el PDF";
+                activity.runOnUiThread(() -> activity.resolveJs(callbackId, false, msg));
+            }
+        }).start();
+    }
+
+    /** ¿Está ya descargado este PDF en el móvil? */
+    @JavascriptInterface
+    public boolean pdfSaved(String infoJson) {
         try {
-            JSONObject o = new JSONObject(json);
-            JSONArray viajes = o.optJSONArray("viajes");
-            DecaWidget.save(ctx, viajes == null ? "[]" : viajes.toString(), o.optInt("indice", 0));
+            return PdfStore.saved(ctx, Session.snapshot(ctx), PdfStore.Info.parse(infoJson));
         } catch (Exception e) {
-            DecaWidget.save(ctx, "[]", 0);
+            return false;
         }
     }
 
+    // ---------------- Actualizaciones de la app ----------------
+
+    /**
+     * Ajustes → «Buscar actualizaciones»: comprueba ahora y, si hay versión nueva, la instala.
+     * Resuelve con "al_dia" o "instalando"; los errores llegan con su mensaje.
+     */
     @JavascriptInterface
-    public String widgetState() {
-        return DecaWidget.state(ctx);
+    public void checkUpdate(String callbackId) {
+        new Thread(() -> {
+            String value;
+            boolean ok = true;
+            try {
+                value = Updater.checkAndInstall(ctx, true) == Updater.Result.INSTALLING ? "instalando" : "al_dia";
+            } catch (Exception e) {
+                ok = false;
+                value = e.getMessage() != null ? e.getMessage() : "No se pudo buscar actualizaciones";
+            }
+            boolean result = ok;
+            String message = value;
+            activity.runOnUiThread(() -> activity.resolveJs(callbackId, result, message));
+        }).start();
+    }
+
+    // ---------------- Widget y pantalla ----------------
+
+    /** Último DeCA (JSON de la API) para el widget, o "null" para vaciarlo. */
+    @JavascriptInterface
+    public void updateWidget(String json) {
+        try {
+            DecaWidget.save(ctx, json == null || json.equals("null") ? null : new JSONObject(json));
+        } catch (Exception e) {
+            DecaWidget.save(ctx, null);
+        }
     }
 
     /** Pide al launcher que añada el widget a la pantalla de inicio. */

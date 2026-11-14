@@ -12,7 +12,7 @@ import { combo, matches } from '../components/combo.js';
 import { addressInput } from '../components/address.js';
 import * as catalog from '../components/catalog.js';
 import { hoy, parseNum, uuid, fecha, kg, num } from '../core/format.js';
-import { setIndex, refreshLatest } from '../components/latest.js';
+import { showOnWidget, refreshLatest } from '../components/latest.js';
 import { enqueue, queueAvailable, sendsInBackground } from '../core/queue.js';
 import { plate as normPlate } from '../core/validate.js';
 
@@ -25,7 +25,7 @@ const PIN_MAP = {
   transportista_domicilio: 'transportista.domicilio', transportista_titular: 'transportista.titular',
   conductor: 'conductor', mercancia: 'envio.mercancia', peso_kg: 'envio.peso_kg', volumen_m3: 'envio.volumen_m3',
   origen: 'envio.origen', destino: 'envio.destino', matricula_camion: 'matricula_camion',
-  matricula_remolque: 'matricula_remolque', numero_viajes: 'numero_viajes', autorizacion_especial: 'autorizacion_especial',
+  matricula_remolque: 'matricula_remolque', autorizacion_especial: 'autorizacion_especial',
 };
 
 function emptyEnvio() {
@@ -39,7 +39,7 @@ function fromTemplate(t) {
   d.envios = d.envios && d.envios.length ? d.envios : [emptyEnvio()];
   d.fecha_transporte = d.fecha_transporte || hoy();
   if (!d.fecha_transporte || d.fecha_transporte < hoy()) d.fecha_transporte = hoy();
-  d.numero_viajes = d.numero_viajes || 1;
+  delete d.numero_viajes; // campo de versiones anteriores (viajes de ida y vuelta)
   return d;
 }
 
@@ -230,13 +230,6 @@ function stepDates(ctx) {
   date.oninput = () => (d.fecha_transporte = date.value);
   const end = input({ type: 'date', value: d.fecha_fin || '' });
   end.oninput = () => (d.fecha_fin = end.value || null);
-  const count = h('div.big-num', String(d.numero_viajes));
-  const setCount = (n) => { d.numero_viajes = Math.max(1, Math.min(30, n)); count.textContent = String(d.numero_viajes); };
-  const stepper = h('div.row', { style: { alignItems: 'center' } },
-    sign({ text: '−', small: true, center: true, color: 'white', onClick: () => setCount(d.numero_viajes - 1) }),
-    h('div.center', count, h('div.muted', d.numero_viajes === 1 ? 'viaje' : 'viajes')),
-    sign({ text: '+', small: true, center: true, color: 'white', onClick: () => setCount(d.numero_viajes + 1) }),
-  );
   const auth = input({ value: d.autorizacion_especial || '', placeholder: 'Solo si procede' });
   auth.oninput = () => (d.autorizacion_especial = auth.value);
   const obs = textarea({ value: d.observaciones || '' });
@@ -247,11 +240,10 @@ function stepDates(ctx) {
     compSel.onchange = () => (d.empresa_id = Number(compSel.value));
   }
   return {
-    title: 'Fecha y viajes', ico: 'calendar',
+    title: 'Fecha', ico: 'calendar',
     nodes: [panel(
       field('Fecha de realización (día que sales)', date),
       field('Fin previsto del servicio', end, { hint: 'Opcional. Si lo dejas vacío, el mismo día.' }),
-      mode === 'create' ? field('Número de viajes (ida y vuelta)', stepper, { pin: pin('numero_viajes'), hint: 'Cada viaje genera un DeCA distinto con su propio QR.' }) : null,
       field('Autorización especial de circulación', auth, { pin: pin('autorizacion_especial') }),
       field('Observaciones', obs),
       compSel ? field('Empresa que emite', compSel) : null,
@@ -272,7 +264,7 @@ function stepReview(ctx) {
     panel(h('h3', 'Vehículo y fecha'), kvs([
       ['Camión', normPlate(d.matricula_camion)], ['Remolque', normPlate(d.matricula_remolque)], ['Conductor', d.conductor],
       ['Fecha', fecha(d.fecha_transporte)], ['Fin', d.fecha_fin ? fecha(d.fecha_fin) : ''],
-      ['Viajes', mode === 'create' ? String(d.numero_viajes) : ''], ['Autorización', d.autorizacion_especial],
+      ['Autorización', d.autorizacion_especial],
     ])),
     ...d.envios.map((e, i) => panel(h('h3', d.envios.length > 1 ? `Envío ${i + 1}` : 'Envío'), kvs([
       ['Origen', e.origen], ['Destino', e.destino], ['Mercancía', e.mercancia], ['Peso', kg(e.peso_kg)], ['Volumen', e.volumen_m3 ? `${num(e.volumen_m3)} m³` : ''],
@@ -285,16 +277,6 @@ function stepReview(ctx) {
     nodes.unshift(
       notice('Se mantiene el mismo QR. En el PDF, los datos anteriores aparecerán tachados como NO VÁLIDOS junto con el motivo.', 'info', 'edit'),
       panel(field('Motivo de la modificación', motivo)),
-    );
-  } else if (d.numero_viajes > 1) {
-    // Ida y vuelta: los viajes impares van A -> B y los pares B -> A.
-    const ida = d.envios.map((e) => `${e.origen} → ${e.destino}`).join(' · ');
-    const vuelta = [...d.envios].reverse().map((e) => `${e.destino} → ${e.origen}`).join(' · ');
-    nodes.unshift(
-      notice(`Se crearán ${d.numero_viajes} DeCA, uno por viaje, cada uno con su QR.`, 'info', 'deca'),
-      panel(h('h3', 'Viajes'), h('dl.kv', Array.from({ length: d.numero_viajes }, (_, i) => [
-        h('dt', `Viaje ${i + 1}`), h('dd', i % 2 === 0 ? ida : vuelta),
-      ]))),
     );
   }
   return {
@@ -363,18 +345,18 @@ function wizard(ctx) {
 
 async function doCreate(ctx) {
   const d = ctx.d;
-  const payload = { ...toPayload(d), numero_viajes: d.numero_viajes, empresa_id: d.empresa_id || undefined, client_ref: ctx.ref };
+  const payload = { ...toPayload(d), empresa_id: d.empresa_id || undefined, client_ref: ctx.ref };
   try {
     const res = await api('/api/decas', { method: 'POST', body: payload, timeout: 30000 });
     setNet(true);
     cache.set(DRAFT, null);
     catalog.invalidate('trucks'); catalog.invalidate('parties'); catalog.invalidate('places'); catalog.invalidate('goods');
-    // Se muestra primero el viaje 1; con las flechas se pasa a los siguientes.
+    // La respuesta es una lista con el DeCA creado.
     const first = res.decas[0];
-    cache.set('ultimo', res.decas);
-    setIndex(res.decas, 0);
+    cache.set('ultimo', [first]);
+    showOnWidget(first);
     if (res.aviso) await modal({ title: 'Atención', body: notice(res.aviso), buttons: [{ text: 'Entendido', value: true, color: 'green' }] });
-    toast(res.decas.length > 1 ? `${res.decas.length} DeCA creados, uno por viaje` : `DeCA ${first.numero} creado`, 'ok');
+    toast(`DeCA ${first.numero} creado`, 'ok');
     go(`/deca/${first.id}`, { replace: true });
   } catch (e) {
     if (!e.offline) throw e;

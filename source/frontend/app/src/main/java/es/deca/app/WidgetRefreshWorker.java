@@ -32,14 +32,16 @@ public class WidgetRefreshWorker extends Worker {
     @Override
     public Result doWork() {
         Context c = getApplicationContext();
+        // Cada 30 min: borra los PDF de DeCA que ya no están en «Últimos 7 Días».
+        PdfStore.prune(c);
         Session.Snapshot owner = Session.snapshot(c);
         if (!owner.active()) return Result.success();
         try {
             Http.Response r = Http.request("GET", owner.server + "/api/decas/ultimo", owner.token, null);
             if (r.ok()) {
-                // Viajes del último DeCA; si es el mismo, se mantiene el viaje que se mostraba.
+                // El servidor devuelve una lista con 0 o 1 DeCA.
                 synchronized (Session.class) {
-                    if (Session.isCurrent(c, owner)) DecaWidget.saveKeepingIndex(c, new JSONArray(r.body.trim()).toString());
+                    if (Session.isCurrent(c, owner)) DecaWidget.save(c, new JSONArray(r.body.trim()).optJSONObject(0));
                 }
             }
         } catch (Exception ignored) {

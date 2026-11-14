@@ -1,12 +1,12 @@
 //! Ubicación de los PDF en disco y construcción de la URL pública.
 //!
-//! Estructura: `DeCA/MatriculaDelCamion/Año/Mes/Día/NombreTrabajador-MatriculaDelCamion-Dia-Mes-Año-Hora-Minuto-Segundo.pdf`
+//! Estructura: `DeCA/MatriculaDelCamion/Año/NombreMes/Día/Nº<n>-NombreTrabajador-MatriculaDelCamion-Día-NombreMes-Año-Hora-Minuto-Segundo.pdf`
 //! URL pública: `<base>/deca/Año/Mes/Día/<token>/<nombre del fichero>.pdf` (sin la matrícula,
 //! para que los QR emitidos antes del cambio de carpetas sigan funcionando).
 
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Datelike, Utc};
 use chrono_tz::Europe::Madrid;
 
 /// Convierte un texto a un nombre de fichero seguro (ASCII, sin tildes ni espacios).
@@ -39,24 +39,15 @@ pub fn sanitize(s: &str) -> String {
     if out.is_empty() { "SinNombre".into() } else { out.chars().take(60).collect() }
 }
 
-/// Ruta relativa (dentro de la carpeta `DeCA/`) y nombre del fichero.
-pub struct Location {
-    /// Carpeta de la matrícula del camión (ya saneada)
-    pub plate_dir: String,
-    /// `Año/Mes/Día`
-    pub date_dir: String,
-    pub file_name: String,
-}
+/// Nombres de los meses en las carpetas y en los nombres de los PDF.
+pub const MONTHS: [&str; 12] = [
+    "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+];
 
-impl Location {
-    /// `Matricula/Año/Mes/Día/fichero.pdf`
-    pub fn rel_path(&self) -> String {
-        format!("{}/{}/{}", self.plate_dir, self.date_dir, self.file_name)
-    }
-
-    pub fn url_path(&self, token: &str) -> String {
-        format!("/deca/{}/{}/{}", self.date_dir, token, self.file_name)
-    }
+/// Nombre del mes `1..=12`.
+pub fn month_name(month: u32) -> &'static str {
+    MONTHS[(month.clamp(1, 12) - 1) as usize]
 }
 
 /// Nombre de la carpeta (y del fragmento del fichero) de una matrícula.
@@ -64,18 +55,80 @@ pub fn plate_dir(plate: &str) -> String {
     sanitize(if plate.trim().is_empty() { "SinMatricula" } else { plate })
 }
 
-/// Nombre libre **reservado** en disco: se crea el fichero vacío de forma exclusiva
-/// (`create_new`), así dos emisiones simultáneas nunca eligen el mismo nombre.
-/// Si ya existe (varios viajes en el mismo segundo, mismo trabajador y camión…)
-/// se prueba `-2`, `-3`… Si la emisión falla antes de [`Reserved::keep`], el
-/// fichero reservado se borra solo.
+/// Dónde se guarda el PDF de un DeCA:
+/// `Matricula/Año/NombreMes/Día/Nº<n>-Trabajador-Matricula-Día-NombreMes-Año-Hora-Minuto-Segundo.pdf`.
+/// El número es el identificador del DeCA (1 el primero emitido, 2 el segundo…),
+/// así que el nombre es único y no hace falta buscar uno libre.
+pub struct Location {
+    pub plate_dir: String,
+    pub year: i32,
+    pub month: u32,
+    pub day: u32,
+    pub file_name: String,
+}
+
+impl Location {
+    pub fn new(number: i64, worker: &str, plate: &str, at: DateTime<Utc>) -> Self {
+        let t = at.with_timezone(&Madrid);
+        let plate_dir = plate_dir(plate);
+        let file_name = format!(
+            "Nº{number}-{}-{plate_dir}-{:02}-{}-{}-{}.pdf",
+            sanitize(worker),
+            t.day(),
+            month_name(t.month()),
+            t.year(),
+            t.format("%H-%M-%S"),
+        );
+        Location { plate_dir, year: t.year(), month: t.month(), day: t.day(), file_name }
+    }
+
+    /// `Matricula/Año/NombreMes/Día/fichero.pdf`
+    pub fn rel_path(&self) -> String {
+        format!("{}/{}/{}/{:02}/{}", self.plate_dir, self.year, month_name(self.month), self.day, self.file_name)
+    }
+
+    /// Ruta del enlace público, sin codificar: `/deca/Año/Mes/Día/<token>/<fichero>`.
+    /// Usa el mes en número, igual que los enlaces de versiones anteriores, para que
+    /// la ruta pública no dependa de cómo se organizan las carpetas.
+    pub fn url_path(&self, token: &str) -> String {
+        format!("/deca/{}/{:02}/{:02}/{token}/{}", self.year, self.month, self.day, self.file_name)
+    }
+}
+
+/// Codifica una ruta para usarla en una URL (la «º» de «Nº» pasa a `%C2%BA`).
+pub fn encode_url_path(path: &str) -> String {
+    let mut out = String::with_capacity(path.len());
+    for b in path.bytes() {
+        if b.is_ascii_alphanumeric() || b"/-._~".contains(&b) {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
+/// Fichero del PDF creado de antemano. Si la emisión falla antes de
+/// [`Reserved::keep`], se borra solo, así no quedan ficheros sin DeCA.
 pub struct Reserved {
-    pub location: Location,
     path: PathBuf,
     kept: bool,
 }
 
 impl Reserved {
+    pub fn new(deca_dir: &Path, location: &Location) -> std::io::Result<Self> {
+        let path = absolute(deca_dir, &location.rel_path());
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::File::create(&path)?;
+        Ok(Reserved { path, kept: false })
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
     /// La emisión se ha confirmado: el fichero ya contiene el PDF y se conserva.
     pub fn keep(mut self) {
         self.kept = true;
@@ -88,25 +141,6 @@ impl Drop for Reserved {
             let _ = std::fs::remove_file(&self.path);
         }
     }
-}
-
-pub fn reserve_location(deca_dir: &Path, worker: &str, plate: &str, at: DateTime<Utc>) -> std::io::Result<Reserved> {
-    let t = at.with_timezone(&Madrid);
-    let plate_dir = plate_dir(plate);
-    let date_dir = t.format("%Y/%m/%d").to_string();
-    let base = format!("{}-{}-{}", sanitize(worker), plate_dir, t.format("%d-%m-%Y-%H-%M-%S"));
-    let dir = deca_dir.join(&plate_dir).join(&date_dir);
-    std::fs::create_dir_all(&dir)?;
-    for n in 1..=1000 {
-        let file_name = if n == 1 { format!("{base}.pdf") } else { format!("{base}-{n}.pdf") };
-        let path = dir.join(&file_name);
-        match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
-            Ok(_) => return Ok(Reserved { location: Location { plate_dir, date_dir, file_name }, path, kept: false }),
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(e) => return Err(e),
-        }
-    }
-    Err(std::io::Error::other("no queda ningún nombre libre para el PDF"))
 }
 
 /// Ruta absoluta segura a partir de una ruta relativa guardada en la base de datos.
@@ -150,5 +184,16 @@ mod tests {
     fn absolute_blocks_traversal() {
         let p = absolute(Path::new("/data/DeCA"), "../../etc/passwd");
         assert_eq!(p, PathBuf::from("/data/DeCA/etc/passwd"));
+    }
+
+    #[test]
+    fn names_use_number_and_month_name() {
+        // 14/11/2026 13:05:09 en Madrid (12:05:09 UTC)
+        let at = "2026-11-14T12:05:09Z".parse().unwrap();
+        let loc = Location::new(7, "Pepe Pérez", "1234BCD", at);
+        assert_eq!(loc.file_name, "Nº7-Pepe_Perez-1234BCD-14-Noviembre-2026-13-05-09.pdf");
+        assert_eq!(loc.rel_path(), "1234BCD/2026/Noviembre/14/Nº7-Pepe_Perez-1234BCD-14-Noviembre-2026-13-05-09.pdf");
+        assert_eq!(loc.url_path("tok"), "/deca/2026/11/14/tok/Nº7-Pepe_Perez-1234BCD-14-Noviembre-2026-13-05-09.pdf");
+        assert_eq!(encode_url_path("/deca/x/Nº7-a.pdf"), "/deca/x/N%C2%BA7-a.pdf");
     }
 }

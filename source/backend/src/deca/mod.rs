@@ -18,8 +18,6 @@ use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 use model::{DecaDatos, Modificacion};
 
-pub const MAX_VIAJES: u32 = 30;
-
 /// Fila de la tabla `decas`.
 #[derive(Clone, Debug, FromRow)]
 pub struct DecaRow {
@@ -35,9 +33,6 @@ pub struct DecaRow {
     pub datos: String,
     pub version: i64,
     pub modificaciones: String,
-    pub viaje_num: i64,
-    pub viaje_total: i64,
-    pub grupo_id: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
@@ -59,9 +54,8 @@ pub struct DecaView {
     pub url_caduca: DateTime<Utc>,
     /// El PDF original sigue guardado (conservación de 1 año).
     pub pdf_disponible: bool,
-    pub viaje_num: i64,
-    pub viaje_total: i64,
-    pub grupo_id: String,
+    /// Nombre del fichero PDF (`Nº<n>-Trabajador-Matricula-….pdf`), para descargarlo así.
+    pub archivo: String,
     pub version: i64,
     pub creado: DateTime<Utc>,
     pub modificado: DateTime<Utc>,
@@ -93,9 +87,7 @@ impl DecaRow {
             url_activa: !self.pdf_deleted && self.expires_at > Utc::now(),
             url_caduca: self.expires_at,
             pdf_disponible: !self.pdf_deleted,
-            viaje_num: self.viaje_num,
-            viaje_total: self.viaje_total,
-            grupo_id: self.grupo_id.clone(),
+            archivo: self.file_name.clone(),
             version: self.version,
             creado: self.created_at,
             modificado: self.updated_at,
@@ -137,95 +129,81 @@ fn expiry(datos: &DecaDatos, created: DateTime<Utc>, days: i64) -> DateTime<Utc>
     (end + Duration::days(days)).max(created + Duration::days(days))
 }
 
-/// Emite uno o varios DeCA (uno por viaje). Cada uno se genera de forma atómica:
-/// registro + PDF con QR en disco; si algo falla no queda nada a medias.
+/// Emite un DeCA de forma atómica: registro + PDF con QR en disco; si algo falla
+/// no queda nada a medias. `client_ref` (de la app) evita duplicados al reintentar.
 pub async fn create(
     state: &AppState,
     user: &CurrentUser,
     company_id: Option<i64>,
     mut datos: DecaDatos,
-    viajes: u32,
     base_url: &str,
     client_ref: Option<&str>,
-) -> AppResult<Vec<DecaRow>> {
+) -> AppResult<DecaRow> {
     datos.normalize_and_validate()?;
-    if viajes == 0 || viajes > MAX_VIAJES {
-        return Err(AppError::bad(format!("El número de viajes debe estar entre 1 y {MAX_VIAJES}")));
-    }
     let base = base_url.trim_end_matches('/');
     let cfg = settings::load(&state.pool).await?;
-    let grupo_id = client_ref.map(str::to_string).unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    // La columna `grupo_id` guarda la referencia de la app para no duplicar reintentos.
+    let client_ref = client_ref.map(str::to_string).unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let deca_dir = state.config.deca_dir();
-    let mut created = Vec::new();
-    for viaje in 1..=viajes as i64 {
-        // Viajes de ida y vuelta: 1 = A -> B, 2 = B -> A, 3 = A -> B…
-        let trip = datos.for_trip(viaje);
-        let datos_json = serde_json::to_string(&trip)?;
-        let now = Utc::now();
-        let token = random_token();
-        let reserved = storage::reserve_location(&deca_dir, &user.display_name, &datos.matricula_camion, now)?;
-        let loc = &reserved.location;
-        let url_path = loc.url_path(&token);
-        let public_url = format!("{base}{url_path}");
-        let expires = expiry(&datos, now, cfg.public_link_days);
+    let datos_json = serde_json::to_string(&datos)?;
+    let now = Utc::now();
+    let token = random_token();
+    let expires = expiry(&datos, now, cfg.public_link_days);
 
-        let mut tx = state.pool.begin().await?;
-        let id: i64 = sqlx::query_scalar(
-            "INSERT INTO decas (company_id, user_id, user_name, token, file_rel_path, file_name, url_path,
-                public_url, datos, matricula_camion, fecha_transporte, viaje_num, viaje_total, grupo_id,
-                created_at, updated_at, expires_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
-        )
-        .bind(company_id)
-        .bind(user.id)
-        .bind(&user.display_name)
-        .bind(&token)
+    // 1. El registro primero: su número (id) forma parte del nombre del PDF.
+    let mut tx = state.pool.begin().await?;
+    let id: i64 = sqlx::query_scalar(
+        "INSERT INTO decas (company_id, user_id, user_name, token, file_rel_path, file_name, url_path,
+            public_url, datos, matricula_camion, fecha_transporte, grupo_id, created_at, updated_at, expires_at)
+         VALUES (?, ?, ?, ?, '', '', '', '', ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+    )
+    .bind(company_id)
+    .bind(user.id)
+    .bind(&user.display_name)
+    .bind(&token)
+    .bind(&datos_json)
+    .bind(&datos.matricula_camion)
+    .bind(datos.fecha_transporte.to_string())
+    .bind(&client_ref)
+    .bind(now)
+    .bind(now)
+    .bind(expires)
+    .fetch_one(&mut *tx)
+    .await?;
+    let numero = format!("DECA-{}-{id:06}", now.with_timezone(&Madrid).format("%Y"));
+    let loc = storage::Location::new(id, &user.display_name, &datos.matricula_camion, now);
+    let url_path = loc.url_path(&token);
+    let public_url = format!("{base}{}", storage::encode_url_path(&url_path));
+    sqlx::query("UPDATE decas SET numero = ?, file_rel_path = ?, file_name = ?, url_path = ?, public_url = ? WHERE id = ?")
+        .bind(&numero)
         .bind(loc.rel_path())
         .bind(&loc.file_name)
         .bind(&url_path)
         .bind(&public_url)
-        .bind(&datos_json)
-        .bind(&trip.matricula_camion)
-        .bind(trip.fecha_transporte.to_string())
-        .bind(viaje)
-        .bind(viajes as i64)
-        .bind(&grupo_id)
-        .bind(now)
-        .bind(now)
-        .bind(expires)
-        .fetch_one(&mut *tx)
+        .bind(id)
+        .execute(&mut *tx)
         .await?;
-        let numero = format!("DECA-{}-{id:06}", now.with_timezone(&Madrid).format("%Y"));
-        sqlx::query("UPDATE decas SET numero = ? WHERE id = ?")
-            .bind(&numero)
-            .bind(id)
-            .execute(&mut *tx)
-            .await?;
 
-        let bytes = pdf::render(&pdf::RenderInput {
-            numero: &numero,
-            url: &public_url,
-            emitido_por: &user.display_name,
-            viaje_num: viaje,
-            viaje_total: viajes as i64,
-            version: 1,
-            created: now,
-            modified: now,
-            datos: &trip,
-            modificaciones: &[],
-        })?;
-        let path = storage::absolute(&deca_dir, &loc.rel_path());
-        storage::write_atomic(&path, &bytes).await?;
-        verify_file(&path).await?;
+    // 2. El PDF. Si algo falla, al salir se borra el fichero (ver `storage::Reserved`).
+    let bytes = pdf::render(&pdf::RenderInput {
+        numero: &numero,
+        url: &public_url,
+        emitido_por: &user.display_name,
+        version: 1,
+        created: now,
+        modified: now,
+        datos: &datos,
+        modificaciones: &[],
+    })?;
+    let reserved = storage::Reserved::new(&deca_dir, &loc)?;
+    storage::write_atomic(reserved.path(), &bytes).await?;
+    verify_file(reserved.path()).await?;
 
-        // Si falla, al salir se borra el fichero reservado (ver `storage::Reserved`).
-        tx.commit().await?;
-        let rel_path = loc.rel_path();
-        reserved.keep();
-        db::audit(&state.pool, Some(user.id), "deca_creado", Some(id), format!("{numero} · {rel_path}")).await;
-        created.push(get_row(state, id).await?);
-    }
-    Ok(created)
+    // 3. Confirmación.
+    tx.commit().await?;
+    reserved.keep();
+    db::audit(&state.pool, Some(user.id), "deca_creado", Some(id), format!("{numero} · {}", loc.rel_path())).await;
+    get_row(state, id).await
 }
 
 /// Comprobación tras escribir: el fichero existe, es un PDF y no supera 5 MB.
@@ -287,8 +265,6 @@ pub async fn modify(
         numero: &row.numero,
         url: &row.public_url,
         emitido_por: &row.user_name,
-        viaje_num: row.viaje_num,
-        viaje_total: row.viaje_total,
         version: new_version,
         created: row.created_at,
         modified: now,

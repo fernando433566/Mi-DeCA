@@ -21,8 +21,6 @@ pub struct RenderInput<'a> {
     pub numero: &'a str,
     pub url: &'a str,
     pub emitido_por: &'a str,
-    pub viaje_num: i64,
-    pub viaje_total: i64,
     pub version: i64,
     pub created: DateTime<Utc>,
     pub modified: DateTime<Utc>,
@@ -169,12 +167,6 @@ fn header(l: &mut Layout, inp: &RenderInput) -> anyhow::Result<()> {
     let y = l.y;
     l.c().text(MARGIN, y - 16.0, 16.0, Font::Bold, &format!("Nº {}", inp.numero));
     l.y -= 26.0;
-    if inp.viaje_total > 1 {
-        l.color(RED);
-        let y = l.y;
-        l.c().text(MARGIN, y - 12.0, 12.0, Font::Bold, &format!("Viaje {} de {}", inp.viaje_num, inp.viaje_total));
-        l.y -= 20.0;
-    }
     l.row(MARGIN, left_w, "Fecha de realización", &fmt_date(inp.datos.fecha_transporte));
     if let Some(fin) = inp.datos.fecha_fin {
         l.row(MARGIN, left_w, "Fin previsto", &fmt_date(fin));

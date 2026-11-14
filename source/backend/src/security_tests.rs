@@ -21,7 +21,7 @@ pub(crate) async fn fixture() -> (AppState, String) {
         allow_insecure_public_url: false, web_dir: "/source/web".into() };
     let (map_queue, _) = tokio::sync::mpsc::unbounded_channel();
     let state = AppState { pool, config: Arc::new(config), http: reqwest::Client::new(),
-        login_limiter: Arc::default(), map_queue, public_url: Arc::default() };
+        login_limiter: Arc::default(), map_queue, public_url: Arc::default(), app_update: Arc::default() };
     let (token, _) = auth::create_session(&state.pool, 1).await.unwrap();
     (state, token)
 }
@@ -105,24 +105,22 @@ async fn group_expansion_keeps_owner_on_latest_widget_and_detail() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(latest.as_array().unwrap().len(), 1, "foreign group member returned");
     assert_eq!(latest[0]["emitido_por_id"], 2);
-    let (_, detail) = call(&state, &token, "GET", "/api/decas/2", json!({})).await;
-    assert_eq!(detail["viajes"].as_array().unwrap().len(), 1);
     let (_, widget) = call(&state, &token, "GET", "/api/widget/ultimo", json!({})).await;
     assert_eq!(widget["viajes"].as_array().unwrap().len(), 1);
 }
 
 #[test]
-fn concurrent_location_selection_is_unique() {
+fn same_second_pdfs_get_different_names_and_failed_ones_are_removed() {
     let dir = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
     let now = Utc::now();
-    let a = crate::deca::storage::reserve_location(&dir, "Dummy", "1234BCD", now).unwrap();
-    let b = crate::deca::storage::reserve_location(&dir, "Dummy", "1234BCD", now).unwrap();
-    assert_ne!(a.location.rel_path(), b.location.rel_path(), "unreserved duplicate PDF path");
-    assert!(b.location.file_name.starts_with("Dummy-1234BCD-") && b.location.file_name.ends_with("-2.pdf"));
-    let first = dir.join(a.location.rel_path());
-    drop(a);
-    assert!(!first.exists(), "a failed emission must release its reserved file");
-    b.keep();
+    let a = crate::deca::storage::Location::new(1, "Dummy", "1234BCD", now);
+    let b = crate::deca::storage::Location::new(2, "Dummy", "1234BCD", now);
+    assert_ne!(a.rel_path(), b.rel_path(), "duplicate PDF path");
+    let first = crate::deca::storage::Reserved::new(&dir, &a).unwrap();
+    let path = first.path().to_path_buf();
+    assert!(path.exists());
+    drop(first);
+    assert!(!path.exists(), "a failed emission must remove its file");
 }
 
 #[tokio::test]

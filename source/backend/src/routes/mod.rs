@@ -14,6 +14,7 @@
 //! | `/sw.js`                  | Aplicación instalable (funcionamiento sin conexión)        |
 //! | `/deca/...`               | Enlace público del QR (descarga directa, sin sesión)       |
 
+mod app;
 mod auth;
 mod catalog;
 mod companies;
@@ -54,6 +55,7 @@ pub fn router(state: AppState) -> Router {
         .nest("/api/widget", decas::widget_router())
         .nest("/api/server", server::router())
         .nest("/api/maps", maps::router())
+        .nest("/api/app", app::router())
         .fallback_service(static_files)
         .with_state(state)
 }

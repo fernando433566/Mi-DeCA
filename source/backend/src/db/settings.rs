@@ -32,6 +32,10 @@ pub struct ServerSettings {
     pub maps_max_zoom: u8,
     /// Regenerar las regiones descargadas cuando tengan más de estos días (0 = nunca).
     pub maps_auto_update_days: i64,
+    /// La app Android busca e instala sola las versiones nuevas (ver `app_update.rs`).
+    pub android_updates_auto: bool,
+    /// Origen de las actualizaciones de la app Android. `None` = `app_update::DEFAULT_SOURCE`.
+    pub android_updates_url: Option<String>,
 }
 
 impl Default for ServerSettings {
@@ -47,7 +51,16 @@ impl Default for ServerSettings {
             maps_source_url: "https://build.protomaps.com".into(),
             maps_max_zoom: 15,
             maps_auto_update_days: 30,
+            android_updates_auto: true,
+            android_updates_url: None,
         }
+    }
+}
+
+impl ServerSettings {
+    /// Origen efectivo de las actualizaciones de la app Android.
+    pub fn android_updates_source(&self) -> &str {
+        self.android_updates_url.as_deref().unwrap_or(crate::app_update::DEFAULT_SOURCE)
     }
 }
 

@@ -19,6 +19,8 @@ pub struct AppState {
     pub map_queue: tokio::sync::mpsc::UnboundedSender<String>,
     /// Comprobación de la dirección pública (HTTPS a través del túnel).
     pub public_url: Arc<crate::public_url::Checker>,
+    /// Última versión de la app Android encontrada en el origen de actualizaciones.
+    pub app_update: Arc<crate::app_update::Cache>,
 }
 
 /// Limita los intentos de inicio de sesión fallidos por usuario

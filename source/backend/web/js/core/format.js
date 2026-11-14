@@ -19,6 +19,11 @@ export function fechaHora(v) {
   });
 }
 
+export function hora(v) {
+  if (!v) return '';
+  return new Date(v).toLocaleTimeString('es-ES', { timeZone: TZ, hour: '2-digit', minute: '2-digit' });
+}
+
 export function diaCorto(v) {
   return new Date(v).toLocaleDateString('es-ES', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'short' });
 }

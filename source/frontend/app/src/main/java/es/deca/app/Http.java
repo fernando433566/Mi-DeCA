@@ -26,6 +26,53 @@ public final class Http {
         }
     }
 
+    /**
+     * Descarga un fichero binario en `dest` (primero en un temporal; si algo falla no queda
+     * nada a medias). Devuelve la respuesta: si no es correcta, `body` trae el error del servidor.
+     * Lanza IOException si no hay conexión con el servidor.
+     * Solo sigue redirecciones si no lleva token (descargas públicas, p. ej. una APK de GitHub):
+     * así el token de la sesión nunca se envía a otro sitio.
+     */
+    public static Response download(String url, String token, java.io.File dest, long maxBytes) throws IOException {
+        HttpURLConnection con = (HttpURLConnection) new URL(url).openConnection();
+        java.io.File tmp = new java.io.File(dest.getParentFile(), dest.getName() + ".part");
+        try {
+            con.setInstanceFollowRedirects(token == null || token.isEmpty());
+            con.setConnectTimeout(15000);
+            con.setReadTimeout(60000);
+            if (token != null && !token.isEmpty()) con.setRequestProperty("Authorization", "Bearer " + token);
+            int status = con.getResponseCode();
+            if (status != 200) {
+                InputStream err = con.getErrorStream();
+                String body = "";
+                if (err != null) {
+                    try (InputStream is = err) {
+                        byte[] buf = new byte[4096];
+                        int n = is.read(buf);
+                        if (n > 0) body = new String(buf, 0, n, StandardCharsets.UTF_8);
+                    }
+                }
+                return new Response(status, body);
+            }
+            try (InputStream is = con.getInputStream(); OutputStream os = new java.io.FileOutputStream(tmp)) {
+                byte[] buf = new byte[8192];
+                long total = 0;
+                int n;
+                while ((n = is.read(buf)) > 0) {
+                    total += n;
+                    if (total > maxBytes) throw new IOException("Fichero demasiado grande");
+                    os.write(buf, 0, n);
+                }
+            }
+            if (!tmp.renameTo(dest)) throw new IOException("No se pudo guardar el fichero");
+            return new Response(status, "");
+        } finally {
+            //noinspection ResultOfMethodCallIgnored
+            tmp.delete();
+            con.disconnect();
+        }
+    }
+
     /** Lanza IOException si no hay conexión con el servidor. */
     public static Response request(String method, String url, String token, String jsonBody) throws IOException {
         HttpURLConnection con = (HttpURLConnection) new URL(url).openConnection();

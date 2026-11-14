@@ -19,7 +19,7 @@ export async function menuView({ cid }) {
     back: '/ajustes',
     body: [
       sign({ text: 'Trabajadores', sub: 'Crear cuentas, código QR de acceso', ico: 'users', chev: true, onClick: () => go(`/empresa/${cid}/trabajadores`) }),
-      sign({ text: 'Administración de Preferencias', sub: 'Qué se rellena solo en los DeCA', ico: 'pin', chev: true, onClick: () => go(`/empresa/${cid}/preferencias`) }),
+      sign({ text: 'Administración de Preferencias', sub: 'Autocompletado y preferencias visuales', ico: 'pin', chev: true, onClick: () => go(`/empresa/${cid}/preferencias`) }),
       sign({ text: 'Administración de trabajadores', sub: 'DeCA emitidos por cada trabajador', ico: 'deca', chev: true, onClick: () => go(`/empresa/${cid}/administracion`) }),
       sign({ text: 'Datos de la empresa', sub: 'Nombre, CIF, domicilio, dueño de los vehículos', ico: 'building', color: 'white', chev: true, onClick: () => go(`/empresa/${cid}/datos`) }),
     ],

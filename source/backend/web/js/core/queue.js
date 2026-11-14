@@ -57,8 +57,7 @@ export async function flush() {
         const res = await api('/api/decas', { method: 'POST', body: item.payload, timeout: 30000 });
         removePending(item.id);
         touched = true;
-        const first = res.decas[0];
-        toast(res.decas.length > 1 ? `${res.decas.length} DeCA creados al volver la conexión` : `DeCA ${first.numero} creado al volver la conexión`, 'ok');
+        toast(`DeCA ${res.decas[0].numero} creado al volver la conexión`, 'ok');
       } catch (e) {
         if (!sameOwner() || e.code === 'session_changed') break;
         // Sin conexión, servidor caído o sesión caducada: se reintenta más tarde.

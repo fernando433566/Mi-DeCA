@@ -32,7 +32,9 @@ public final class Session {
             prefs(c).edit().clear().apply();
         }
         if (!previous.owner.equals(snapshot(c).owner)) {
-            DecaWidget.save(c, "[]", 0);
+            DecaWidget.save(c, null);
+            // Los PDF descargados son de la cuenta anterior: no deben quedar en el móvil.
+            PdfStore.clear(c);
             android.app.NotificationManager notifications = c.getSystemService(android.app.NotificationManager.class);
             if (notifications != null) notifications.cancelAll();
         }
@@ -48,15 +50,19 @@ public final class Session {
                     ? "" : server + "|" + userId;
         }
         public boolean active() { return !owner.isEmpty(); }
-        public String queueFile() {
+        /** Identificador de la cuenta (servidor + usuario) apto para nombres de fichero. */
+        public String key() {
             if (!active()) throw new IllegalStateException("No hay sesión activa");
             try {
                 byte[] hash = java.security.MessageDigest.getInstance("SHA-256")
                         .digest(owner.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                StringBuilder key = new StringBuilder("pendientes-");
+                StringBuilder key = new StringBuilder();
                 for (byte b : hash) key.append(String.format(java.util.Locale.ROOT, "%02x", b));
-                return key + ".json";
+                return key.toString();
             } catch (java.security.NoSuchAlgorithmException e) { throw new IllegalStateException(e); }
+        }
+        public String queueFile() {
+            return "pendientes-" + key() + ".json";
         }
     }
 

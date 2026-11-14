@@ -144,10 +144,15 @@ async fn get_prefs(State(state): State<AppState>, user: CurrentUser) -> AppResul
         .iter()
         .map(|(k, n)| json!({ "campo": k, "nombre": n, "bloqueado": admin_worker.contains_key(*k) || company.contains_key(*k) }))
         .collect();
+    let visuales: Vec<Value> = preferences::visual(&admin_worker, &company, &own)
+        .iter()
+        .map(|f| json!({ "campo": f.campo, "nombre": f.nombre, "bloqueado": f.bloqueado, "valor": f.valor }))
+        .collect();
     Ok(Json(json!({
         "propias": own,
         "fijadas_por_administrador": { "trabajador": admin_worker, "empresa": company },
         "campos": fields,
+        "visuales": visuales,
     })))
 }
 

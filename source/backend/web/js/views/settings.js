@@ -4,12 +4,22 @@
 
 import { h } from '../core/dom.js';
 import { api, cachedGet, session } from '../core/api.js';
-import { page, sign, section, loading, confirm, toast } from '../core/ui.js';
+import { page, sign, section, loading, confirm, toast, busy } from '../core/ui.js';
 import { go } from '../core/router.js';
 import { isAdmin, state, setUser } from '../core/state.js';
 import { native, isAndroid } from '../core/native.js';
 import { isIOS, isInstalled } from '../core/platform.js';
 import { localMapsAvailable } from '../core/localmaps.js';
+
+/** «Versión de la app»: busca una versión nueva y, si la hay, la instala (Android). */
+function updateSign() {
+  const btn = sign({ text: `Versión de la app ${native.appVersion() || ''}`, sub: 'Buscar actualizaciones', ico: 'refresh', color: 'white' });
+  btn.onclick = () => busy(btn, async () => {
+    const r = await native.checkUpdate();
+    toast(r === 'instalando' ? 'Instalando la versión nueva…' : 'Ya tienes la última versión', 'ok');
+  });
+  return btn;
+}
 
 export async function view() {
   page({ title: 'Ajustes', back: '/', body: loading() });
@@ -27,16 +37,17 @@ export async function view() {
     }
     body.push(sign({ text: 'Añadir empresa', ico: 'plus', color: 'white', small: true, onClick: () => go('/empresa/nueva') }));
     body.push(section('Servidor'));
-    body.push(sign({ text: 'Servidor', sub: 'Copias de seguridad, eliminación automática, dirección pública', ico: 'server', color: 'green', chev: true, onClick: () => go('/servidor') }));
+    body.push(sign({ text: 'Servidor', sub: 'Copias de seguridad, dirección pública, mapas y actualizaciones de la app', ico: 'server', color: 'green', chev: true, onClick: () => go('/servidor') }));
   }
   body.push(section('Mis ajustes'));
   body.push(
-    sign({ text: 'Preferencias', sub: 'Datos que se rellenan solos en cada DeCA', ico: 'pin', chev: true, onClick: () => go('/ajustes/preferencias') }),
+    sign({ text: 'Preferencias', sub: 'Autocompletado y preferencias visuales', ico: 'pin', chev: true, onClick: () => go('/ajustes/preferencias') }),
     sign({ text: 'Mi cuenta', sub: 'Contraseña y código de verificación', ico: 'user', chev: true, onClick: () => go('/ajustes/cuenta') }),
     sign({ text: 'Camiones y remolques', ico: 'truck', chev: true, onClick: () => go('/ajustes/vehiculos') }),
     sign({ text: 'Empresas y ubicaciones', sub: 'Cargadoras, transportistas y sus direcciones', ico: 'building', chev: true, onClick: () => go('/ajustes/empresas') }),
     sign({ text: 'Mapas', sub: localMapsAvailable() ? 'Descargar mapas para usar sin conexión' : 'Mapas de OpenStreetMap', ico: 'map', chev: true, onClick: () => go('/ajustes/mapas') }),
     isIOS && !isInstalled() ? sign({ text: 'Instalar en el iPhone', sub: 'Añade DeCA a la pantalla de inicio', ico: 'share', color: 'yellow', chev: true, onClick: () => go('/instalar') }) : null,
+    isAndroid ? updateSign() : null,
     isAndroid ? sign({
       text: 'Poner el billete en la pantalla de inicio', sub: 'Widget con el último DeCA y su QR', ico: 'qr', color: 'white',
       onClick: () => { if (!native.pinWidget()) toast('Mantén pulsada la pantalla de inicio → Widgets → DeCA'); },
@@ -48,7 +59,7 @@ export async function view() {
       if (!(await confirm('¿Cerrar la sesión en este dispositivo?', { ok: 'Cerrar sesión', danger: true }))) return;
       try { await api('/api/auth/logout', { method: 'POST' }); } catch { /* da igual */ }
       session.clear();
-      native.updateWidget([], 0);
+      native.updateWidget(null);
       go('/login', { replace: true });
     },
   });

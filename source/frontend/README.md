@@ -9,11 +9,13 @@ de un puente JavaScript (`window.DecaNative`, ver `../backend/web/js/core/native
 | Función | Cómo funciona |
 |---|---|
 | **DeCA sin conexión** | Si al emitir no hay conexión con el servidor, el DeCA se guarda en una cola (`PendingQueue`). WorkManager (`DecaSyncWorker`) lo envía en cuanto hay red y reintenta con espera creciente. El servidor no lo duplica gracias a `client_ref`. Al crearse, llega una notificación con el QR y se actualiza el widget. Mientras tanto, la app avisa de que el DeCA aún no es válido |
-| **Widget** | Billete con el último DeCA y su QR (generado en el móvil). Con varios viajes empieza por el viaje 1 y tiene flechas a la izquierda y a la derecha para cambiar de viaje. El viaje elegido se comparte con la app. Se refresca cada 30 min y al emitir. Se añade desde Ajustes → «Poner el billete en la pantalla de inicio» |
+| **Widget** | Billete con el último DeCA y su QR (generado en el móvil). Se refresca cada 30 min y al emitir. Se añade desde Ajustes → «Poner el billete en la pantalla de inicio» |
 | **Entrar con QR** | Escáner nativo (zxing-android-embedded) del QR que enseña el administrador |
 | **Mapas sin conexión** | Ajustes → Mapas: descarga regiones PMTiles con el gestor de descargas (se reanuda si se corta) y comprueba su SHA-256. MapLibre las lee del móvil por trozos (`MapStore.read`) |
 | **Enseñar QR** | Pantalla completa con el brillo al máximo para el control en carretera |
-| **Descargas** | PDF y copias de seguridad en la carpeta «Descargas» (con el token de la sesión) |
+| **PDF de los DeCA** | Se descargan en los datos privados de la app (`files/pdf`, no en «Descargas») y se abren solos con el visor de PDF del móvil. Si ya están descargados se abren sin conexión («Abrir PDF»). Se borran solos cuando el DeCA sale de «Últimos 7 Días» (al abrir la app y cada 30 min) y al cambiar de cuenta (`PdfStore`, `FileProvider`) |
+| **Actualizaciones** | `Updater`, `UpdateWorker`, `UpdateReceiver`: pregunta al servidor (`/api/app/update`) por la última versión del origen que eligió el administrador, descarga la APK (sin el token de la sesión), comprueba su SHA-256 si el origen lo da y la instala con `PackageInstaller` (sin preguntar cuando Android lo permite; si no, con su diálogo o una notificación). Automático al abrir la app y cada 12 h si el administrador lo activa; manual en Ajustes → «Versión de la app» |
+| **Descargas** | Copias de seguridad en la carpeta «Descargas» (con el token de la sesión) |
 
 ## Compatibilidad: Android 8.0 (API 26) o superior
 

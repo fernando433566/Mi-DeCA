@@ -42,13 +42,13 @@ public final class Notifier {
     }
 
     /** DeCA creado: notificación con el QR ya visible. */
-    public static void created(Context c, JSONObject deca, int count) {
+    public static void created(Context c, JSONObject deca) {
         if (!allowed(c)) return;
         channel(c);
         String numero = deca.optString("numero");
         String url = deca.optString("url");
         Bitmap qr = QrBitmap.make(url, 512);
-        String text = count > 1 ? count + " DeCA creados. Ya tienes el QR." : "Ya tienes el QR. Toca para verlo.";
+        String text = "Ya tienes el QR. Toca para verlo.";
         NotificationCompat.Builder b = new NotificationCompat.Builder(c, CHANNEL)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle("DeCA " + numero + " creado")
@@ -59,6 +59,24 @@ public final class Notifier {
         if (qr != null) b.setLargeIcon(qr).setStyle(new NotificationCompat.BigPictureStyle().bigPicture(qr).setSummaryText(text));
         try {
             NotificationManagerCompat.from(c).notify((int) deca.optLong("id"), b.build());
+        } catch (SecurityException ignored) { }
+    }
+
+    /** Avisos de actualización de la app (ver {@link Updater}); `action` puede ser null. */
+    static void update(Context c, String title, String text, PendingIntent action) {
+        if (!allowed(c)) return;
+        NotificationManager nm = c.getSystemService(NotificationManager.class);
+        NotificationChannel ch = new NotificationChannel("deca_actualizaciones", "Actualizaciones de la app", NotificationManager.IMPORTANCE_DEFAULT);
+        ch.setDescription("Avisos cuando hay una versión nueva de DeCA");
+        nm.createNotificationChannel(ch);
+        NotificationCompat.Builder b = new NotificationCompat.Builder(c, "deca_actualizaciones")
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(title)
+                .setContentText(text)
+                .setAutoCancel(true);
+        if (action != null) b.setContentIntent(action);
+        try {
+            NotificationManagerCompat.from(c).notify(3, b.build());
         } catch (SecurityException ignored) { }
     }
 

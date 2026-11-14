@@ -7,8 +7,8 @@ import { page, sign, section, notice, topButton, loading, toast, confirm, panel 
 import { go } from '../core/router.js';
 import { isAndroid, native } from '../core/native.js';
 import { state, isAdmin, setNet } from '../core/state.js';
-import { pendingTicket, tripCarousel } from '../components/ticket.js';
-import { currentIndex, setIndex } from '../components/latest.js';
+import { pendingTicket, ticket } from '../components/ticket.js';
+import { showOnWidget } from '../components/latest.js';
 import { fechaHora } from '../core/format.js';
 import * as catalog from '../components/catalog.js';
 import { pending, removePending, retry as retryQueue, queueAvailable, sendsInBackground } from '../core/queue.js';
@@ -68,20 +68,16 @@ export async function view() {
   }
 
   try {
-    // Todos los viajes del último DeCA, del 1 al último.
-    const viajes = await cachedGet('/api/decas/ultimo', 'ultimo');
-    setNet(!viajes.__offline);
-    const index = currentIndex(viajes);
+    // El servidor devuelve una lista con 0 o 1 DeCA.
+    const list = await cachedGet('/api/decas/ultimo', 'ultimo');
+    setNet(!list.__offline);
+    const last = list[0];
     latestBox.replaceChildren(
-      viajes.length
-        ? tripCarousel(viajes, index, {
-          showUser: isAdmin(),
-          onOpen: (d) => go(`/deca/${d.id}`),
-          onChange: (i) => setIndex(viajes, i),
-        })
+      last
+        ? ticket(last, { showUser: isAdmin(), onClick: () => go(`/deca/${last.id}`) })
         : panel(h('p.muted.center', 'Todavía no hay ningún DeCA. Pulsa «CREAR DeCA» para hacer el primero.')),
     );
-    if (!viajes.__offline) native.updateWidget(viajes, index);
+    if (!list.__offline) showOnWidget(last);
   } catch (e) {
     if (e.offline) setNet(false);
     latestBox.replaceChildren(notice(e.offline ? 'Sin conexión y sin datos guardados todavía.' : e.message, 'danger'));
@@ -119,7 +115,6 @@ export async function pendingView({ id }) {
           h('dt', 'Cargador'), h('dd', d.cargador?.nombre || ''),
           h('dt', 'Transportista'), h('dd', d.transportista?.nombre || ''),
           ...env.flatMap((e, i) => [h('dt', `Envío ${i + 1}`), h('dd', `${e.origen} → ${e.destino}`)]),
-          h('dt', 'Viajes'), h('dd', String(d.numero_viajes || 1)),
         ),
       ),
       discard,

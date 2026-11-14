@@ -7,10 +7,6 @@
     android:gravity="center_vertical"
     android:padding="4dp">
 
-    <!-- Viaje anterior (solo con varios viajes de ida y vuelta) -->
-    <ImageView android:id="@+id/w_prev" android:layout_width="30dp" android:layout_height="56dp"
-        android:layout_marginEnd="4dp" android:src="@drawable/widget_arrow_left"
-        android:contentDescription="Viaje anterior" android:visibility="gone" />
 
     <LinearLayout
         android:id="@+id/w_body"
@@ -54,8 +50,4 @@
             android:adjustViewBounds="true" android:scaleType="fitCenter" android:contentDescription="Código QR del DeCA" />
     </LinearLayout>
 
-    <!-- Viaje siguiente -->
-    <ImageView android:id="@+id/w_next" android:layout_width="30dp" android:layout_height="56dp"
-        android:layout_marginStart="4dp" android:src="@drawable/widget_arrow_right"
-        android:contentDescription="Viaje siguiente" android:visibility="gone" />
 </LinearLayout>

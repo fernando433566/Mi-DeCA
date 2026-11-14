@@ -79,6 +79,10 @@ struct SettingsPatch {
     maps_max_zoom: Option<u8>,
     /// Actualizar mapas cada N días (0 = nunca)
     maps_auto_update_days: Option<i64>,
+    /// La app Android busca e instala sola las actualizaciones
+    android_updates_auto: Option<bool>,
+    /// Origen de las actualizaciones ("" = el predeterminado)
+    android_updates_url: Option<String>,
 }
 
 async fn put_settings(State(state): State<AppState>, AdminUser(admin): AdminUser, Json(p): Json<SettingsPatch>) -> AppResult<Json<settings::ServerSettings>> {
@@ -138,6 +142,18 @@ async fn put_settings(State(state): State<AppState>, AdminUser(admin): AdminUser
             return Err(AppError::bad("La actualización de mapas debe estar entre 0 (nunca) y 365 días"));
         }
         s.maps_auto_update_days = d;
+    }
+    if let Some(v) = p.android_updates_auto {
+        s.android_updates_auto = v;
+    }
+    if let Some(url) = p.android_updates_url {
+        let url = url.trim().trim_end_matches('/').to_string();
+        if url.is_empty() || url == crate::app_update::DEFAULT_SOURCE {
+            s.android_updates_url = None;
+        } else {
+            crate::app_update::Source::parse(&url).map_err(|e| AppError::bad(format!("Origen de actualizaciones: {e}")))?;
+            s.android_updates_url = Some(url);
+        }
     }
     settings::save(&state.pool, &s).await?;
     db::audit(&state.pool, Some(admin.id), "ajustes_servidor", None, serde_json::to_string(&s)?).await;
